@@ -29,10 +29,10 @@ on:
         required: false
         default: 'sarif'
         type: string
-      output_fiale:
+      output_file:
         description: 'Output file path'
         required: false
-        default: 'pci-results.sarif'
+        default: 'pci-res ults.sarif'
         type: string
       fail_on:
         description: 'Severities to fail on'
