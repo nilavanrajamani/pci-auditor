@@ -1,0 +1,33 @@
+# Example project-level PCI Auditor configuration.
+# Place this file as .pci-auditor.yml in your repo root.
+
+# Severity levels that will fail the CI/CD build (exit code 1)
+fail_on:
+  - critical
+  - high
+
+# Paths/patterns to exclude from scanning
+exclude_paths:
+  - "tests/"
+  - "docs/"
+  - "*.md"
+  - "migrations/"
+  - ".venv"
+  - "node_modules"
+
+# Lines per chunk sent to Azure OpenAI (reduce if hitting token limits)
+chunk_lines: 150
+
+# Maximum file size to scan (KB)
+max_file_size_kb: 512
+
+# Set to false to disable AI analysis (pattern-only scan)
+use_ai: true
+
+# Azure OpenAI settings (prefer env vars for secrets)
+# azure_openai_endpoint:    set via AZURE_OPENAI_ENDPOINT env var
+# azure_openai_deployment:  set via AZURE_OPENAI_DEPLOYMENT env var
+# azure_openai_api_version: "2024-02-01"
+
+# URL to fetch updated PCI rules from
+# rules_source: "https://example.com/your-org/pci_rules.json"  # supply your own URL

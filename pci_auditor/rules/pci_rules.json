@@ -1,0 +1,288 @@
+{
+  "pci_dss_version": "4.0.1",
+  "last_updated": "2025-01-01",
+  "source": "PCI Security Standards Council - PCI DSS v4.0.1",
+  "notes": "Rule requirement text and IDs are cross-referenced against PCI DSS v4.0 published March 2022 and v4.0.1. Severity tiers (Critical/High/Medium/Low) are interpretive mappings for developer tooling — PCI DSS does not formally define this severity taxonomy. Code indicators and prompt hints are optimised for static analysis of application source code.",
+  "rules": [
+    {
+      "id": "1.3.2",
+      "requirement": "Restrict inbound traffic to only that which is necessary for the cardholder data environment (CDE). All other traffic must be denied.",
+      "severity": "High",
+      "category": "Network Security",
+      "code_indicators": ["0.0.0.0/0", "allow all", "ANY ANY", "ALLOW *", "inbound.*any"],
+      "ai_prompt_hint": "Look for firewall rules, network policies, security group configurations, or IaC (Terraform/CloudFormation) resources that allow unrestricted inbound access to CDE components."
+    },
+    {
+      "id": "2.2.1",
+      "requirement": "All system components use vendor-supported software and are protected from known vulnerabilities by applying applicable security patches and updates.",
+      "severity": "High",
+      "category": "Secure Configuration",
+      "code_indicators": ["TODO: update", "deprecated", "legacy", "end-of-life", "EOL"],
+      "ai_prompt_hint": "Identify references to deprecated libraries, outdated package versions with known CVEs, or explicitly marked legacy/EOL components."
+    },
+    {
+      "id": "2.2.7",
+      "requirement": "All non-console administrative access is encrypted using strong cryptography. Technologies that use clear-text protocols for administrative access are not used.",
+      "severity": "Critical",
+      "category": "Secure Configuration",
+      "code_indicators": ["telnet://", "ftp://", "rsh ", "rlogin"],
+      "ai_prompt_hint": "Find any plain-text remote administration protocols: telnet, FTP, rsh, or rlogin. HTTP used for admin interfaces should also be flagged."
+    },
+    {
+      "id": "3.3.1",
+      "requirement": "Sensitive authentication data (SAD) is not retained after authorization. This includes full track data, PAN, CVV/CVC/CAV2/CID, and PIN/PIN block data.",
+      "severity": "Critical",
+      "category": "Protect Stored Account Data",
+      "code_indicators": [
+        "(?<![A-Z0-9])[0-9]{13,19}(?![0-9])",
+        "pan", "primary_account_number", "card_number", "cardnumber", "creditcard", "credit_card_number",
+        "cvv", "cvc", "cav2", "cid", "security_code", "securitycode", "card_verification", "cvv2",
+        "track1", "track2", "track_data", "magnetic_stripe"
+      ],
+      "ai_prompt_hint": "Identify any code that stores, logs, or persists SAD after authorization: full PANs, CVV/CVC security codes, PIN data, or full magnetic stripe/chip track data in variables, databases, files, or logs."
+    },
+    {
+      "id": "3.3.2",
+      "requirement": "SAD stored electronically prior to completion of authorization is encrypted using strong cryptography. This requirement does not apply to issuers that legitimately store SAD.",
+      "severity": "Critical",
+      "category": "Protect Stored Account Data",
+      "code_indicators": [
+        "cache\\.set\\(.*(?:cvv|pan|card|track)",
+        "r(?:edis)?\\.set\\(.*(?:cvv|pan|card_number|track)",
+        "session\\[.*['\"](?:cvv|pan|card_number|track_data)['\"]\\]",
+        "session\\.(?:cvv|pan|card_number|track_data)\\s*=",
+        "memcache.*\\.set\\(.*(?:cvv|card|pan)",
+        "\\.set\\(['\"](?:cvv|pan|card_number|track)['\"],",
+        "temp_(?:card|cvv|pan|track)\\s*=",
+        "pending_(?:card|cvv|pan)\\s*="
+      ],
+      "ai_prompt_hint": "Look for code that temporarily caches or stages raw SAD (card numbers, CVV, track data) in session storage, in-memory stores (Redis/Memcached), or temp variables before authorization completes, without first encrypting it with strong cryptography."
+    },
+    {
+      "id": "3.4.1",
+      "requirement": "The PAN is masked when displayed so that only personnel with a legitimate business need can see more than the first six and last four digits of the PAN. This requirement does not supersede stricter requirements for PAN display.",
+      "severity": "High",
+      "category": "Protect Stored Account Data",
+      "code_indicators": [
+        "print\\(.*(?:card_number|full_pan|credit_card)",
+        "logger?\\.(?:info|debug|warning|error)\\(.*(?:pan|card_number|credit_card)",
+        "display.*(?:credit_card|card_number)",
+        "render.*card_number",
+        "\\.write\\(.*(?:pan|card_number|credit_card)",
+        "response.*['\"]card_number['\"].*:",
+        "json\\.dumps.*card_number",
+        "return.*full.*pan",
+        "str\\(.*card_number"
+      ],
+      "ai_prompt_hint": "Look for code that outputs, displays, logs, or returns a full PAN string without masking — showing more than the first six and last four digits. Check print statements, log calls, API response serializers, and UI render functions."
+    },
+    {
+      "id": "3.5.1",
+      "requirement": "PAN is rendered unreadable anywhere it is stored by using any of: one-way hashes based on strong cryptography, truncation, index tokens with securely stored pads, or strong cryptography with associated key management.",
+      "severity": "Critical",
+      "category": "Protect Stored Account Data",
+      "code_indicators": [
+        "INSERT.*card", "UPDATE.*card", "save.*pan", "store.*pan", "write.*pan",
+        "File.Write.*card", "db.*insert.*credit", "collection.*insert.*card"
+      ],
+      "ai_prompt_hint": "Check for database INSERT/UPDATE, file write, or cache store operations that include raw PAN values without first applying encryption, tokenisation, or truncation. The PAN must be unreadable at rest."
+    },
+    {
+      "id": "3.7.1",
+      "requirement": "Key management policies and procedures are implemented covering the full lifecycle of cryptographic keys used to protect stored account data, including generation, distribution, storage, access, retirement, and destruction.",
+      "severity": "High",
+      "category": "Protect Stored Account Data",
+      "code_indicators": ["hardcoded.*key", "const.*key.*=", "AES.*key.*=.*\"", "RSA.*key.*=.*\"", "encryption_key\\s*="],
+      "ai_prompt_hint": "Detect hardcoded cryptographic keys or IVs in source code, configuration files, or environment variable defaults. Keys should always be loaded from a secure vault or HSM, never embedded in source."
+    },
+    {
+      "id": "4.2.1",
+      "requirement": "Strong cryptography is used to safeguard PAN during transmission over open, public networks. Accepted industry protocols must be used (TLS 1.2 or higher). Weak protocols (TLS 1.0/1.1, SSL) are not used.",
+      "severity": "Critical",
+      "category": "Protect Cardholder Data in Transit",
+      "code_indicators": ["http://", "TLSv1\\.0", "TLSv1\\.1", "SSLv2", "SSLv3", "ssl_version.*tlsv1\\b", "PROTOCOL_TLSv1\\b", "SecurityProtocolType\\.Tls\\b(?!\\.1[12])"],
+      "ai_prompt_hint": "Find HTTP (non-HTTPS) endpoints, TLS 1.0/1.1 configurations, SSL v2/v3 usage, weak cipher suites, or certificate validation being disabled. All PAN transmission must use TLS 1.2 or higher."
+    },
+    {
+      "id": "4.2.1.1",
+      "requirement": "An inventory of the trusted keys and certificates used to protect PAN in transit is maintained.",
+      "severity": "Medium",
+      "category": "Protect Cardholder Data in Transit",
+      "code_indicators": ["verify=False", "ssl_verify.*false", "InsecureRequestWarning", "checkCertificate.*false", "ServerCertificateValidationCallback.*true", "REQUESTS_CA_BUNDLE.*False"],
+      "ai_prompt_hint": "Look for disabled SSL/TLS certificate validation, suppressed certificate warnings, or unconditional acceptance of self-signed certificates. Valid, unexpired certificates from trusted CAs must be used."
+    },
+    {
+      "id": "6.2.1",
+      "requirement": "Bespoke and custom software are developed securely. Security vulnerabilities are addressed by applying applicable security patches or updates. A process to identify and address vulnerabilities in bespoke and custom software is followed.",
+      "severity": "High",
+      "category": "Develop and Maintain Secure Systems",
+      "code_indicators": [],
+      "ai_prompt_hint": "Review dependency declarations (requirements.txt, package.json, pom.xml, *.csproj, Gemfile.lock) for packages with known CVEs or pinned to old versions that have published security patches."
+    },
+    {
+      "id": "6.2.4",
+      "requirement": "Software engineering techniques or other methods are used to prevent or mitigate common software attacks and related vulnerabilities in bespoke and custom software including: injection attacks, attacks on data and data structures, attacks on cryptography usage, business logic attacks, access control attacks.",
+      "severity": "High",
+      "category": "Develop and Maintain Secure Systems",
+      "code_indicators": [
+        "execute\\(.*request\\.", "execute\\(.*req\\.", "query\\(.*\\+", "query.*format\\(",
+        "eval\\(", "exec\\(", "os\\.system\\(", "subprocess.*shell=True",
+        "pickle\\.loads", "yaml\\.load\\(", "deserialize\\(", "BinaryFormatter",
+        "innerHTML\\s*=", "document\\.write\\(", "dangerouslySetInnerHTML"
+      ],
+      "ai_prompt_hint": "Detect SQL injection, command injection, XSS, unsafe deserialization, path traversal, or access control vulnerabilities in code that handles cardholder data."
+    },
+    {
+      "id": "6.3.3",
+      "requirement": "All software components are protected from known vulnerabilities by installing applicable security patches or updates. Critical patches are installed within one month of release.",
+      "severity": "Medium",
+      "category": "Develop and Maintain Secure Systems",
+      "code_indicators": [],
+      "ai_prompt_hint": "Check that dependency lock files are present and that packages are not pinned to versions with known published security vulnerabilities. Cross-reference against the NIST NVD or OSV databases."
+    },
+    {
+      "id": "6.4.1",
+      "requirement": "Public-facing web applications are protected against attacks continually via technical controls that detect and prevent web-based attacks, either from an automated technical solution or via review of web applications at least once every 12 months.",
+      "severity": "High",
+      "category": "Develop and Maintain Secure Systems",
+      "code_indicators": ["AllowAnonymous", "IgnoreAntiforgeryToken", "csrf.*disabled", "CSRF_COOKIE_SECURE.*False"],
+      "ai_prompt_hint": "Look for missing or disabled CSRF protections, or other indicators that automated attack prevention (WAF) has been bypassed in payment-facing web endpoints."
+    },
+    {
+      "id": "6.4.3",
+      "requirement": "All payment page scripts loaded and executed in the consumer's browser are managed as follows: a method is implemented to confirm each script is authorised, script integrity is assured, and an inventory of all scripts is maintained with written justification.",
+      "severity": "High",
+      "category": "Develop and Maintain Secure Systems",
+      "code_indicators": [
+        "document\\.createElement\\(['\"]script['\"]\\)",
+        "script\\.src\\s*=",
+        "<script[^>]*src=['\"][^'\"]*[^'\"]",
+        "eval\\(atob\\(",
+        "document\\.write.*<script",
+        "jQuery\\.getScript\\(",
+        "\\.appendChild\\(script\\)"
+      ],
+      "ai_prompt_hint": "Look for dynamically injected scripts on payment pages that lack Subresource Integrity (SRI) hash attributes, external scripts without versioning, or use of eval/document.write to load scripts. New requirement in PCI DSS v4.0 / 4.0.1."
+    },
+    {
+      "id": "7.2.1",
+      "requirement": "An access control model is defined and includes granting access to system components and cardholder data based on least privilege, denying all access by default, and assigning access based on documented job classification and function.",
+      "severity": "High",
+      "category": "Restrict Access to Cardholder Data",
+      "code_indicators": ["role.*admin.*all", "grant all", "SELECT \\*.*card", "HasRole.*any", "IsInRole.*\\*"],
+      "ai_prompt_hint": "Identify overly broad access control grants, missing role-based access checks before returning cardholder data, wildcard permission grants, or default-allow patterns."
+    },
+    {
+      "id": "8.2.1",
+      "requirement": "All user IDs and associated authentication factors for users and administrators are managed throughout the full user ID lifecycle, including when accounts are added, modified, and deleted.",
+      "severity": "Medium",
+      "category": "Strong Authentication",
+      "code_indicators": ["userId.*shared", "serviceaccount.*password", "generic.*user", "default.*admin", "username.*admin.*admin"],
+      "ai_prompt_hint": "Find shared accounts, generic usernames, or hardcoded service account credentials in code or configuration files. All accounts must have a unique ID linked to an individual."
+    },
+    {
+      "id": "8.3.6",
+      "requirement": "If passwords/passphrases are used as authentication factors, they meet a minimum length of at least 12 characters (or at least eight if the system does not support 12). Passwords must contain both numeric and alphabetic characters.",
+      "severity": "High",
+      "category": "Strong Authentication",
+      "code_indicators": [
+        "min_length\\s*[=:]\\s*(0?[1-9]|1[01])\\b",
+        "minlength\\s*[=:]\\s*(0?[1-9]|1[01])\\b",
+        "password.*length.*\\b(0?[1-9]|1[01])\\b",
+        "MIN_PASSWORD_LENGTH\\s*=\\s*(0?[1-9]|1[01])\\b",
+        "minimum_password_length\\s*=\\s*(0?[1-9]|1[01])\\b"
+      ],
+      "ai_prompt_hint": "Look for password policy configurations that enforce fewer than 12 characters minimum. Check validation logic, configuration files, and identity provider settings."
+    },
+    {
+      "id": "8.4.2",
+      "requirement": "Multi-factor authentication (MFA) is implemented for all access into the cardholder data environment (CDE). This requirement was new in PCI DSS v4.0 and expanded MFA beyond just non-console administrative access.",
+      "severity": "Critical",
+      "category": "Strong Authentication",
+      "code_indicators": [
+        "mfa.*disabled", "two_factor.*false", "require_mfa.*false",
+        "skip_mfa", "bypass.*mfa", "MFA_REQUIRED.*False", "ENABLE_MFA.*False"
+      ],
+      "ai_prompt_hint": "Identify configuration flags or code paths that disable, bypass, or make optional the multi-factor authentication requirement for any user accessing CDE systems or cardholder data."
+    },
+    {
+      "id": "8.6.1",
+      "requirement": "Use of application and system accounts and associated authentication factors is strictly managed to ensure they are not misused. Application/system accounts that can be used for interactive login are managed through policies and procedures.",
+      "severity": "High",
+      "category": "Strong Authentication",
+      "code_indicators": [
+        "hashlib\\.md5",
+        "hashlib\\.sha1",
+        "MD5.*password",
+        "SHA-?1.*password",
+        "password.*(?:md5|sha1)",
+        "bcrypt.*rounds\\s*=\\s*(0?[1-9]|1[01])\\b",
+        "bcrypt\\.gensalt\\(\\s*rounds\\s*=\\s*(0?[1-9]|1[01])\\)",
+        "PBKDF2.*iterations.*[1-9][0-9]{0,4}\\b"
+      ],
+      "ai_prompt_hint": "Identify use of weak hashing algorithms (MD5, SHA-1) for password or credential storage, insufficient bcrypt work factors (<12), or any hint of plaintext credential storage."
+    },
+    {
+      "id": "8.6.2",
+      "requirement": "Passwords/passphrases for any application and system account that can be used for interactive login are not hard-coded in scripts, configuration or property files, and other custom and bespoke code.",
+      "severity": "Critical",
+      "category": "Strong Authentication",
+      "code_indicators": [
+        "password\\s*=\\s*['\"][^'\"]{1,}['\"]",
+        "secret\\s*=\\s*['\"][^'\"]{1,}['\"]",
+        "api_key\\s*=\\s*['\"][^'\"]{8,}['\"]",
+        "token\\s*=\\s*['\"][^'\"]{4,}['\"]"  ,
+        "DB_PASSWORD\\s*=\\s*['\"][^'\"]+['\"]"
+      ],
+      "ai_prompt_hint": "Detect hardcoded passwords, API keys, secrets, tokens, or database credentials in source code, scripts, or configuration files. All credentials must be loaded from a secrets manager or environment variables at runtime."
+    },
+    {
+      "id": "10.2.1",
+      "requirement": "Audit logs are implemented to support the detection of anomalies and suspicious activity, and the forensic analysis of events including: all individual user access to cardholder data and system components with cardholder data.",
+      "severity": "High",
+      "category": "Log and Monitor",
+      "code_indicators": ["SELECT.*card.*WHERE", "GetCardData", "FetchPAN", "readCard", "getPaymentMethod"],
+      "ai_prompt_hint": "Find functions that access cardholder data without emitting an audit log entry. Every read or query of PAN, CVV, or account data should generate a log event including the user ID, timestamp, and data accessed."
+    },
+    {
+      "id": "10.3.3",
+      "requirement": "Audit log files, including those for external-facing technologies, are promptly backed up to a centralized, secure log server or other media that is difficult to alter.",
+      "severity": "Medium",
+      "category": "Log and Monitor",
+      "code_indicators": ["logging.*disable", "log.*level.*NONE", "NullHandler", "logging.disable(logging.CRITICAL)", "addHandler.*NullHandler"],
+      "ai_prompt_hint": "Identify code that disables logging entirely, configures NullHandler, or suppresses all log output for components that handle cardholder data. Logs must be streamed to a central, tamper-resistant store."
+    },
+    {
+      "id": "10.7.2",
+      "requirement": "Failures of critical security controls are detected, alerted, and reported in a timely manner. Security control failures must not go undetected. (Requirement 10.7.1 applies to service providers; 10.7.2 applies to all entities.)",
+      "severity": "Medium",
+      "category": "Log and Monitor",
+      "code_indicators": ["except.*pass", "catch.*{}", "catch.*Exception.*//", "except Exception:\\s*\\n\\s*pass", "except:$"],
+      "ai_prompt_hint": "Look for silent exception handlers (bare except: pass, empty catch blocks) in security-critical code paths dealing with authentication, authorization, or cardholder data processing. Failures must be surfaced and alerted."
+    },
+    {
+      "id": "11.3.2",
+      "requirement": "External and internal penetration testing is performed at least once every 12 months and after any significant infrastructure or application upgrade or change.",
+      "severity": "Medium",
+      "category": "Test Security",
+      "code_indicators": [],
+      "ai_prompt_hint": "Check for TODO/FIXME comments related to security testing, missing security test files, absence of a SECURITY.md, or no references to penetration test findings being tracked."
+    },
+    {
+      "id": "12.3.3",
+      "requirement": "All cryptographic cipher suites and protocols in use are documented and reviewed at least once every 12 months, including an up-to-date inventory.",
+      "severity": "High",
+      "category": "Security Policies",
+      "code_indicators": ["DES\\b", "3DES\\b", "RC4\\b", "RC2\\b", "Blowfish\\b", "TripleDES", "DESCryptoServiceProvider", "RC4Engine", "ARC4", "ARCFOUR"],
+      "ai_prompt_hint": "Identify use of cryptographically weak or deprecated algorithms (DES, 3DES, RC4, RC2, Blowfish) for protection of cardholder data. These should be replaced with AES-256 or ChaCha20."
+    },
+    {
+      "id": "12.6.2",
+      "requirement": "The security awareness programme is reviewed at least once every 12 months and updated as necessary to address any new threats and vulnerabilities that may impact the security of the CDE.",
+      "severity": "Low",
+      "category": "Security Policies",
+      "code_indicators": [],
+      "ai_prompt_hint": "Check project documentation, README, or security policy files for references to a security awareness programme and evidence that it has been reviewed and kept current."
+    }
+  ]
+}

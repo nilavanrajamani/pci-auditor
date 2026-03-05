@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.env
+*.env
+
+# PCI Auditor cached rules (~/.pci-auditor/ is outside the repo; listed for clarity)
+.pci-auditor-cache/
+
+# Project config file — may contain endpoint URLs; keep out of source control
+.pci-auditor.yml
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# SARIF / scan outputs
+*.sarif
+pci-results/
+
+# OS
+.DS_Store
+Thumbs.db
