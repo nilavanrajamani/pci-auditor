@@ -1,48 +1,73 @@
-# PCI DSS 4.0 Compliance Audit — GitHub Actions
+# PCI DSS 4.0 Compliance Audit — Reusable Workflow
 #
-# Two jobs:
-#   pr-scan     — triggered on every pull request; scans only changed lines
-#   full-scan   — triggered on push to main/develop; scans the entire codebase
+# This workflow is called from target repositories (like pci-vulnerable-app).
+# It uses secrets from the pci-auditor repository via 'secrets: inherit'.
 #
-# Required GitHub repository secrets (Settings → Secrets and variables → Actions):
-#   AZURE_OPENAI_ENDPOINT                – https://<resource>.openai.azure.com/
-#   AZURE_OPENAI_API_KEY                 – Azure OpenAI API key
-#   AZURE_OPENAI_DEPLOYMENT              – Chat deployment name (e.g. gpt-4.1-mini)
-#   AZURE_OPENAI_API_VERSION             – API version (e.g. 2024-12-01-preview)
-#
-# Optional secrets (enable RAG — improves accuracy, reduces token cost):
-#   AZURE_OPENAI_EMBEDDING_DEPLOYMENT    – Embedding deployment (e.g. text-embedding-3-small)
-#
-# Optional secrets (enable Azure AI Search backend instead of local cosine index):
-#   AZURE_SEARCH_ENDPOINT                – https://<search>.search.windows.net
-#   AZURE_SEARCH_API_KEY                 – Azure AI Search admin/query key
-#   AZURE_SEARCH_INDEX_NAME              – Index name (e.g. pci-rules)
-#
-# SARIF results are uploaded to the repository Security tab automatically.
-# Findings appear as code scanning alerts with file/line annotations.
+# Called by:
+#   uses: nilavanrajamani/pci-auditor/.github/workflows/pci-scan-reusable.yml@main
+#   with:
+#     scan_type: 'codebase'  # or 'pr'
+#   secrets: inherit
 
-name: PCI DSS Compliance Audit
+name: PCI DSS Reusable Scan
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-  pull_request:
-    branches:
-      - main
-      - develop
+  workflow_call:
+    inputs:
+      scan_type:
+        description: 'Type of scan (pr or codebase)'
+        required: false
+        default: 'codebase'
+        type: string
+      path:
+        description: 'Path to scan'
+        required: false
+        default: '.'
+        type: string
+      output_format:
+        description: 'Output format (console, json, sarif)'
+        required: false
+        default: 'sarif'
+        type: string
+      output_fiale:
+        description: 'Output file path'
+        required: false
+        default: 'pci-results.sarif'
+        type: string
+      fail_on:
+        description: 'Severities to fail on'
+        required: false
+        default: 'critical,high'
+        type: string
+      no_ai:
+        description: 'Disable AI analysis'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      AZURE_OPENAI_ENDPOINT:
+        required: true
+      AZURE_OPENAI_API_KEY:
+        required: true
+      AZURE_OPENAI_DEPLOYMENT:
+        required: true
+      AZURE_OPENAI_API_VERSION:
+        required: true
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT:
+        required: false
+      AZURE_SEARCH_ENDPOINT:
+        required: false
+      AZURE_SEARCH_API_KEY:
+        required: false
+      AZURE_SEARCH_INDEX_NAME:
+        required: false
 
 permissions:
   contents: read
-  security-events: write   # required to upload SARIF to GitHub Security tab
-  pull-requests: write     # allows posting a PR comment with the summary (optional step)
+  security-events: write
+  pull-requests: write
 
 jobs:
-
-  # ---------------------------------------------------------------------------
-  # Job 1: PR Scan — scans only lines changed in this pull request
-  # ---------------------------------------------------------------------------
   pr-scan:
     name: PCI DSS PR Scan
     runs-on: ubuntu-latest
@@ -52,7 +77,7 @@ jobs:
       - name: Checkout (full history for git diff)
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0        # full history required for accurate git diff
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -60,23 +85,19 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install pci-auditor
+      - name: Install pci-auditor from main repo
         run: |
           python -m pip install --upgrade pip
-          pip install .
+          pip install git+https://github.com/nilavanrajamani/pci-auditor.git@main
 
-      # Cache the local rule embedding index keyed by pci_rules.json content.
-      # If the rules haven't changed, the index is reused — no API call needed.
       - name: Cache rule embeddings
         uses: actions/cache@v4
         with:
           path: ~/.pci-auditor/rule_embeddings.json
-          key: pci-embeddings-${{ hashFiles('pci_auditor/rules/pci_rules.json') }}
+          key: pci-embeddings-${{ hashFiles('https://raw.githubusercontent.com/nilavanrajamani/pci-auditor/main/pci_auditor/rules/pci_rules.json') }}
 
-      # Build the embedding index only if the cache was not restored.
-      # Skip silently if AZURE_OPENAI_EMBEDDING_DEPLOYMENT is not configured.
       - name: Build rule embedding index (RAG)
-        if: env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT != ''
+        if: secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT != ''
         run: pci-auditor rules index-build || echo "Index build failed — will use all rules"
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
@@ -88,7 +109,7 @@ jobs:
           AZURE_SEARCH_INDEX_NAME: ${{ secrets.AZURE_SEARCH_INDEX_NAME }}
         continue-on-error: true
 
-      - name: Run PCI PR scan (SARIF)
+      - name: Run PCI PR scan
         run: |
           mkdir -p pci-results
           pci-auditor scan pr \
@@ -97,7 +118,7 @@ jobs:
             --head HEAD \
             --output-format sarif \
             --output-file pci-results/pci-pr-results.sarif \
-            --fail-on critical,high
+            --fail-on ${{ inputs.fail_on }}
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
@@ -108,7 +129,6 @@ jobs:
           AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
           AZURE_SEARCH_INDEX_NAME: ${{ secrets.AZURE_SEARCH_INDEX_NAME }}
 
-      # Upload SARIF → GitHub Security tab → inline PR annotations
       - name: Upload SARIF to GitHub Security tab
         if: always()
         uses: github/codeql-action/upload-sarif@v3
@@ -116,7 +136,7 @@ jobs:
           sarif_file: pci-results/pci-pr-results.sarif
           category: pci-dss-pr
 
-      - name: Upload SARIF as build artifact
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -124,9 +144,6 @@ jobs:
           path: pci-results/
           retention-days: 30
 
-  # ---------------------------------------------------------------------------
-  # Job 2: Full Codebase Scan — runs on every push to main/develop
-  # ---------------------------------------------------------------------------
   full-scan:
     name: PCI DSS Full Codebase Scan
     runs-on: ubuntu-latest
@@ -144,19 +161,19 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install pci-auditor
+      - name: Install pci-auditor from main repo
         run: |
           python -m pip install --upgrade pip
-          pip install .
+          pip install git+https://github.com/nilavanrajamani/pci-auditor.git@main
 
       - name: Cache rule embeddings
         uses: actions/cache@v4
         with:
           path: ~/.pci-auditor/rule_embeddings.json
-          key: pci-embeddings-${{ hashFiles('pci_auditor/rules/pci_rules.json') }}
+          key: pci-embeddings-${{ hashFiles('https://raw.githubusercontent.com/nilavanrajamani/pci-auditor/main/pci_auditor/rules/pci_rules.json') }}
 
       - name: Build rule embedding index (RAG)
-        if: env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT != ''
+        if: secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT != ''
         run: pci-auditor rules index-build || echo "Index build failed — will use all rules"
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
@@ -168,14 +185,14 @@ jobs:
           AZURE_SEARCH_INDEX_NAME: ${{ secrets.AZURE_SEARCH_INDEX_NAME }}
         continue-on-error: true
 
-      - name: Run PCI full codebase scan (SARIF)
+      - name: Run PCI full codebase scan
         run: |
           mkdir -p pci-results
           pci-auditor scan codebase \
-            --path "$GITHUB_WORKSPACE" \
-            --output-format sarif \
-            --output-file pci-results/pci-full-results.sarif \
-            --fail-on critical,high
+            --path "${{ inputs.path }}" \
+            --output-format ${{ inputs.output_format }} \
+            --output-file pci-results/${{ inputs.output_file }} \
+            --fail-on ${{ inputs.fail_on }} ${{ inputs.no_ai && '--no-ai' || '' }}
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
@@ -186,28 +203,101 @@ jobs:
           AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
           AZURE_SEARCH_INDEX_NAME: ${{ secrets.AZURE_SEARCH_INDEX_NAME }}
 
-      # Also produce a JSON report for downstream tooling / dashboards
-      - name: Generate JSON report (pattern-only, non-blocking)
-        run: |
-          pci-auditor scan codebase \
-            --path "$GITHUB_WORKSPACE" \
-            --output-format json \
-            --output-file pci-results/pci-full-results.json \
-            --no-ai \
-            --fail-on none
-        continue-on-error: true
-
       - name: Upload SARIF to GitHub Security tab
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: pci-results/pci-full-results.sarif
+          sarif_file: pci-results/${{ inputs.output_file }}
           category: pci-dss-full
 
-      - name: Upload results as build artifact
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pci-full-results
           path: pci-results/
-          retention-days: 90
+          retention-days: 30
+
+  manual-scan:
+    name: PCI DSS Manual Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pci-auditor from main repo
+        run: |
+          python -m pip install --upgrade pip
+          pip install git+https://github.com/nilavanrajamani/pci-auditor.git@main
+
+      - name: Cache rule embeddings
+        uses: actions/cache@v4
+        with:
+          path: ~/.pci-auditor/rule_embeddings.json
+          key: pci-embeddings-${{ hashFiles('https://raw.githubusercontent.com/nilavanrajamani/pci-auditor/main/pci_auditor/rules/pci_rules.json') }}
+
+      - name: Build rule embedding index (RAG)
+        if: secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT != ''
+        run: pci-auditor rules index-build || echo "Index build failed — will use all rules"
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
+          AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}
+          AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
+          AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
+          AZURE_SEARCH_INDEX_NAME: ${{ secrets.AZURE_SEARCH_INDEX_NAME }}
+        continue-on-error: true
+
+      - name: Run PCI scan (dispatch)
+        run: |
+          mkdir -p pci-results
+          if [ "${{ inputs.scan_type }}" == "pr" ]; then
+            pci-auditor scan pr \
+              --repo-path "$GITHUB_WORKSPACE" \
+              --base-branch "origin/main" \
+              --head HEAD \
+              --output-format ${{ inputs.output_format }} \
+              --output-file pci-results/${{ inputs.output_file }} \
+              --fail-on ${{ inputs.fail_on }} ${{ inputs.no_ai && '--no-ai' || '' }}
+          else
+            pci-auditor scan codebase \
+              --path "${{ inputs.path }}" \
+              --output-format ${{ inputs.output_format }} \
+              --output-file pci-results/${{ inputs.output_file }} \
+              --fail-on ${{ inputs.fail_on }} ${{ inputs.no_ai && '--no-ai' || '' }}
+          fi
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
+          AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
+          AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}
+          AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
+          AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
+          AZURE_SEARCH_INDEX_NAME: ${{ secrets.AZURE_SEARCH_INDEX_NAME }}
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always() && inputs.output_format == 'sarif'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pci-results/${{ inputs.output_file }}
+          category: pci-dss-manual
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pci-manual-results
+          path: pci-results/
+          retention-days: 30
