@@ -231,11 +231,8 @@ def _finding_to_result(finding: Finding, repo_root: Optional[Path]) -> dict:
             "text": finding.snippet
         }
 
-    if finding.recommendation:
-        result["fixes"] = [
-            {
-                "description": {"text": finding.recommendation},
-            }
-        ]
+    # Note: SARIF 'fixes' requires artifactChanges (minItems:1) which we cannot
+    # populate without knowing exact byte offsets. The recommendation is already
+    # included in message.markdown, so we omit 'fixes' to keep the SARIF valid.
 
     return result
