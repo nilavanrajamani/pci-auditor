@@ -165,27 +165,55 @@ def scan_codebase(
     from pci_auditor.scanner.file_scanner import scan_file
     from pci_auditor.rules.rule_loader import load_rules
     from pci_auditor.models import ScanResult
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
+    from rich.console import Console
+
+    console = Console(stderr=True)
 
     rules = load_rules()
     ai_client = _build_ai_client(cfg)
     rule_retriever = _build_rule_retriever(cfg, rules)
     result = ScanResult()
 
-    for file_path in iter_files(root, cfg.exclude_paths, cfg.max_file_size_kb):
-        file_findings = scan_file(
-            file_path=file_path,
-            rules=rules,
-            ai_client=ai_client,
-            chunk_lines=cfg.chunk_lines,
-            max_file_size_kb=cfg.max_file_size_kb,
-            rule_retriever=rule_retriever,
-        )
-        result.findings.extend(file_findings)
-        result.scanned_files += 1
-        try:
-            result.scanned_lines += sum(1 for _ in file_path.open(encoding="utf-8", errors="replace"))
-        except OSError:
-            pass
+    # Collect files first so we can show a proper progress bar
+    all_files = list(iter_files(root, cfg.exclude_paths, cfg.max_file_size_kb))
+
+    if not all_files:
+        console.print("[yellow]No scannable files found in[/yellow]", str(root))
+        _output_results(result, cfg, repo_root=root)
+        sys.exit(EXIT_OK)
+
+    ai_note = " [dim](AI analysis enabled — may be slow for large codebases)[/dim]" if ai_client else ""
+    console.print(f"[bold]Scanning {len(all_files)} file(s) in[/bold] {root}{ai_note}")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Scanning...", total=len(all_files))
+
+        for file_path in all_files:
+            progress.update(task, description=f"[cyan]{file_path.name}[/cyan]")
+            file_findings = scan_file(
+                file_path=file_path,
+                rules=rules,
+                ai_client=ai_client,
+                chunk_lines=cfg.chunk_lines,
+                max_file_size_kb=cfg.max_file_size_kb,
+                rule_retriever=rule_retriever,
+            )
+            result.findings.extend(file_findings)
+            result.scanned_files += 1
+            try:
+                result.scanned_lines += sum(1 for _ in file_path.open(encoding="utf-8", errors="replace"))
+            except OSError:
+                pass
+            progress.advance(task)
 
     _output_results(result, cfg, repo_root=root)
     sys.exit(EXIT_VIOLATIONS if should_fail(result.findings, cfg.fail_on) else EXIT_OK)
