@@ -456,10 +456,16 @@ def _output_results(result, cfg: AuditorConfig, repo_root: Optional[Path] = None
     if fmt == "json":
         from pci_auditor.reporter.json_reporter import write_json
         write_json(result, cfg.output_file)
+        # Always print console summary so findings are visible in CI logs
+        from pci_auditor.reporter.console_reporter import print_results
+        print_results(result, cfg.fail_on)
     elif fmt == "sarif":
         from pci_auditor.reporter.sarif_reporter import write_sarif
         meta = get_rules_metadata()
         write_sarif(result, cfg.output_file, meta, repo_root=repo_root)
+        # Always print console summary so findings are visible in CI logs
+        from pci_auditor.reporter.console_reporter import print_results
+        print_results(result, cfg.fail_on)
     else:
         from pci_auditor.reporter.console_reporter import print_results
         print_results(result, cfg.fail_on)
