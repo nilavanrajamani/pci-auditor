@@ -142,7 +142,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: pci-results/pci-pr-results.sarif
-          category: pci-dss-pr
+          category: pci-dss-manual
 
       - name: Upload artifacts
         if: always()
