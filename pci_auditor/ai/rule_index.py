@@ -19,6 +19,7 @@ into every AI prompt (the original behaviour).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 _CACHE_PATH = Path.home() / ".pci-auditor" / "rule_embeddings.json"
 _AZURE_META_PATH = Path.home() / ".pci-auditor" / "azure_search_rules_meta.json"
+_AZURE_HASH_PATH = Path.home() / ".pci-auditor" / "azure_search_rules_hash.txt"
 _AZURE_SEARCH_API_VERSION = "2024-07-01"
 
 
@@ -206,12 +208,36 @@ class AzureSearchRuleIndex:
     # Public API
     # ------------------------------------------------------------------
 
-    def build(self, rules: List[PciRule], embedder: EmbeddingClient) -> None:
+    @staticmethod
+    def _compute_rules_hash(rules: List[PciRule]) -> str:
+        """SHA-256 of the canonical rule texts — used to skip redundant rebuilds."""
+        content = "|".join(_rule_embedding_text(r) for r in sorted(rules, key=lambda r: r.id))
+        return hashlib.sha256(content.encode()).hexdigest()
+
+    def is_up_to_date(self, rules: List[PciRule]) -> bool:
+        """Return True if the Azure AI Search index already matches *rules*."""
+        if not _AZURE_HASH_PATH.exists() or not _AZURE_META_PATH.exists():
+            return False
+        stored = _AZURE_HASH_PATH.read_text(encoding="utf-8").strip()
+        return stored == self._compute_rules_hash(rules)
+
+    def build(self, rules: List[PciRule], embedder: EmbeddingClient, force: bool = False) -> None:
         """Create or update the Azure AI Search index and upload all rules.
+
+        Skips the rebuild if the index is already up-to-date with the current
+        rule set (detected via a SHA-256 hash of rule texts). Pass
+        ``force=True`` to always rebuild.
 
         Detects the embedding dimension from the first rule's vector so
         you don't need to set it manually.
         """
+        if not force and self.is_up_to_date(rules):
+            logger.info(
+                "Azure AI Search index '%s' is already up-to-date — skipping rebuild.",
+                self._index_name,
+            )
+            return
+
         import httpx
 
         # Detect dimension from first embedding
@@ -325,6 +351,10 @@ class AzureSearchRuleIndex:
         }
         _AZURE_META_PATH.write_text(json.dumps(rule_meta), encoding="utf-8")
         logger.info("Saved Azure Search rule metadata to %s", _AZURE_META_PATH)
+
+        # Persist hash so subsequent runs can skip the rebuild
+        _AZURE_HASH_PATH.write_text(self._compute_rules_hash(rules), encoding="utf-8")
+        logger.info("Saved Azure Search rules hash to %s", _AZURE_HASH_PATH)
 
     def _load_rule_meta(self) -> Dict[str, PciRule]:
         if not _AZURE_META_PATH.exists():

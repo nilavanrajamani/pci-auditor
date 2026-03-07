@@ -283,7 +283,9 @@ def rules_reset() -> None:
          "'azure-search' uploads to an Azure AI Search index.",
 )
 @click.option("--verbose", "-v", is_flag=True, default=False)
-def rules_index_build(path: str, backend: str, verbose: bool) -> None:
+@click.option("--force", is_flag=True, default=False,
+              help="Force rebuild even if the index is already up-to-date.")
+def rules_index_build(path: str, backend: str, verbose: bool, force: bool) -> None:
     """Build the vector index for semantic rule retrieval.
 
     Generates an embedding for each PCI DSS rule and stores them so that
@@ -319,6 +321,17 @@ def rules_index_build(path: str, backend: str, verbose: bool) -> None:
         sys.exit(EXIT_ERROR)
 
     rules = load_rules()
+    if not force and backend == "azure-search":
+        # Peek at hash before printing or calling the embedding API
+        from pci_auditor.ai.rule_index import AzureSearchRuleIndex as _AzIdx
+        _peek = _AzIdx(
+            search_endpoint=cfg.azure_search_endpoint or "",
+            search_api_key=cfg.azure_search_api_key or "",
+            index_name=getattr(cfg, "azure_search_index_name", "pci-rules"),
+        )
+        if _peek.is_up_to_date(rules):
+            click.echo("OK Azure AI Search index is already up-to-date — skipping rebuild.")
+            return
     click.echo(
         f"Building {backend} index for {len(rules)} rules using "
         f"'{cfg.azure_openai_embedding_deployment}'..."
@@ -349,7 +362,7 @@ def rules_index_build(path: str, backend: str, verbose: bool) -> None:
             index_name=cfg.azure_search_index_name,
         )
         try:
-            idx.build(rules, embedder)
+            idx.build(rules, embedder, force=force)
             click.echo(
                 f"OK Azure AI Search index '{cfg.azure_search_index_name}' "
                 f"built with {len(rules)} rules."

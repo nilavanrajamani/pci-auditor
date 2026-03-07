@@ -72,7 +72,7 @@ jobs:
           key: pci-embeddings-${{ hashFiles('**/pci_rules.json') }}
 
       - name: Build rule embedding index (RAG)
-        run: pci-auditor rules index-build || echo "Index build failed — will use all rules"
+        run: pci-auditor rules index-build --backend azure-search || echo "Index build failed — will use all rules"
         continue-on-error: true
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
