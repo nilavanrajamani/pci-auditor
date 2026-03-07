@@ -95,7 +95,7 @@ FAIL Build FAILED: Critical/High PCI DSS violations detected
 ### Which model
 
 Azure OpenAI via **Azure AI Foundry** — deployment name is fully configurable
-(`AZURE_OPENAI_DEPLOYMENT` env var). Designed and tested with **GPT-4o**.
+(`AZURE_OPENAI_DEPLOYMENT` env var). Designed and tested with **gpt-4.1-mini**.
 
 ### Why LLMs?
 
@@ -199,7 +199,7 @@ tool falls back silently to injecting all rules.
                │  AI analysis │      │  LocalRuleIndex  (cosine sim, JSON)
                │  (per chunk) │      │  AzureSearchIndex (vector search)
                │              │      └─ top-K rules / chunk
-               │              │◄──── Azure OpenAI (GPT-4o)
+               │              │◄──── Azure OpenAI (gpt-4.1-mini)
                │              │      Structured JSON prompts
                └──────┬──────┘
                       │
@@ -468,7 +468,7 @@ An Azure OpenAI **resource** is just a container. The actual models live inside 
 
 | Mode | Azure OpenAI resource | GPT deployment | Embedding deployment | Azure AI Search |
 |---|---|---|---|---|
-| Pattern-only (`--no-ai`) | ✗ | ✗ | ✗ | ✗ |
+| Pattern-only (`--detection-mode pattern`) | ✗ | ✗ | ✗ | ✗ |
 | AI scan | ✓ | ✓ | ✗ | ✗ |
 | AI + RAG (local index) | ✓ | ✓ | ✓ | ✗ |
 | AI + RAG + cloud index | ✓ | ✓ | ✓ | ✓ |
@@ -489,7 +489,7 @@ The tool has two modes. Choose what you need:
 
 ---
 
-**Mode 1 — Pattern only (`--no-ai`)**
+**Mode 1 — Pattern only (`--detection-mode pattern`)**
 
 No Azure resources needed. Regex scanning only. Free and offline.
 
@@ -501,8 +501,8 @@ Requires an **Azure OpenAI** resource:
 
 | What to create | Where | Notes |
 |---|---|---|
-| Azure OpenAI resource | [Azure Portal → Azure OpenAI](https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI) | Any region that supports GPT-4o |
-| Chat completion deployment | Azure AI Foundry → Deployments | Model: `gpt-4o` (recommended). Note the **deployment name** |
+| Azure OpenAI resource | [Azure Portal → Azure OpenAI](https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI) | Any region that supports GPT-4.1-mini |
+| Chat completion deployment | Azure AI Foundry → Deployments | Model: `gpt-4.1-mini` (recommended). Note the **deployment name** |
 
 That's all you need for basic AI scanning.
 
@@ -545,7 +545,7 @@ everything and writes a ready-to-use `.env` file.
 | Resource | Always? | What it does |
 |---|---|---|
 | **Azure OpenAI account** | ✓ | Container for both model deployments, gives you the endpoint URL and API key |
-| **gpt-4o deployment** (10K TPM) | ✓ | Reads source-code chunks and returns PCI DSS 4.0 findings as JSON |
+| **gpt-4.1-mini deployment** (10K TPM) | ✓ | Reads source-code chunks and returns PCI DSS 4.0 findings as JSON |
 | **text-embedding-3-small deployment** (10K TPM) | ✓ | Converts rules and code chunks to vectors for the RAG step |
 | **Azure AI Search** (Basic tier) | Optional (`-IncludeSearch`) | Cloud-hosted vector index — use this for CI/CD or multi-developer teams; omit it to use the free built-in local index instead |
 
@@ -555,7 +555,7 @@ they are globally unique and require no manual naming.
 #### Requirements
 
 - [Azure CLI](https://aka.ms/installazurecli) installed and on `PATH`
-- An Azure subscription with quota for GPT-4o in your chosen region
+- An Azure subscription with quota for GPT-4.1-mini in your chosen region
   (recommended regions: `eastus`, `eastus2`, `swedencentral`, `australiaeast`)
 
 #### Run the deploy script
@@ -586,9 +586,11 @@ The script will:
 ```dotenv
 AZURE_OPENAI_ENDPOINT=https://pciaudit-openai-<hash>.openai.azure.com/
 AZURE_OPENAI_API_KEY=<key>
-AZURE_OPENAI_DEPLOYMENT=gpt-4o
-AZURE_OPENAI_API_VERSION=2024-02-01
+AZURE_OPENAI_DEPLOYMENT=gpt-4.1-mini
+AZURE_OPENAI_API_VERSION=2024-12-01-preview
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+AZURE_OPENAI_EMBEDDING_ENDPOINT=https://<resource>.openai.azure.com/
+AZURE_OPENAI_EMBEDDING_API_KEY=<key>
 PCI_AUDITOR_TOP_K_RULES=8
 
 # (only present when -IncludeSearch is specified)
@@ -663,14 +665,16 @@ cp .env.example .env
 |---|---|---|---|
 | `AZURE_OPENAI_ENDPOINT` | Yes | — | Full endpoint URL, e.g. `https://<resource>.openai.azure.com/` |
 | `AZURE_OPENAI_API_KEY` | Yes | — | API key for the resource |
-| `AZURE_OPENAI_DEPLOYMENT` | Yes | `gpt-4o` | Name of your chat-completion deployment |
-| `AZURE_OPENAI_API_VERSION` | No | `2024-02-01` | Azure OpenAI API version |
+| `AZURE_OPENAI_DEPLOYMENT` | Yes | `gpt-4.1-mini` | Name of your chat-completion deployment |
+| `AZURE_OPENAI_API_VERSION` | No | `2024-12-01-preview` | Azure OpenAI API version |
 
 **Semantic rule retrieval / RAG** (optional — improves accuracy and cuts token cost)
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | No | — | Name of your text-embedding deployment. Required to use `rules index-build`. Recommended: `text-embedding-3-small` |
+| `AZURE_OPENAI_EMBEDDING_ENDPOINT` | No | same as `AZURE_OPENAI_ENDPOINT` | Endpoint URL for the embedding deployment (use when it is in a different resource) |
+| `AZURE_OPENAI_EMBEDDING_API_KEY` | No | same as `AZURE_OPENAI_API_KEY` | API key for the embedding deployment (use when it is in a different resource) |
 | `PCI_AUDITOR_TOP_K_RULES` | No | `8` | Rules injected per code chunk. Lower = cheaper; higher = broader coverage |
 
 **Azure AI Search** (optional — replaces local cosine-similarity index for team/CI use)
@@ -813,8 +817,10 @@ following **pipeline variables** in Azure DevOps (mark API keys as secret):
 |---|---|---|
 | `AZURE_OPENAI_ENDPOINT` | Yes | Your Azure OpenAI endpoint URL |
 | `AZURE_OPENAI_API_KEY` | Yes | API key (mark as secret) |
-| `AZURE_OPENAI_DEPLOYMENT` | Yes | Chat deployment name (e.g. `gpt-4o`) |
+| `AZURE_OPENAI_DEPLOYMENT` | Yes | Chat deployment name (e.g. `gpt-4.1-mini`) |
 | `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | No | Embedding deployment for RAG |
+| `AZURE_OPENAI_EMBEDDING_ENDPOINT` | No | Embedding endpoint (if different resource) |
+| `AZURE_OPENAI_EMBEDDING_API_KEY` | No | Embedding API key (if different resource, mark as secret) |
 | `AZURE_SEARCH_ENDPOINT` | No | Azure AI Search endpoint |
 | `AZURE_SEARCH_API_KEY` | No | Azure AI Search API key (mark as secret) |
 
