@@ -72,7 +72,8 @@ jobs:
             ~/.pci-auditor/rule_embeddings.json
             ~/.pci-auditor/azure_search_rules_meta.json
             ~/.pci-auditor/azure_search_rules_hash.txt
-          key: pci-embeddings-${{ hashFiles('**/pci_rules.json') }}
+          key: pci-embeddings-${{ github.run_id }}
+          restore-keys: pci-embeddings-
 
       - name: Build rule embedding index (RAG)
         run: pci-auditor rules index-build --backend azure-search || echo "Index build failed — will use all rules"
