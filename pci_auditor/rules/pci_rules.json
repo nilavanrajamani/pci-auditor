@@ -9,7 +9,7 @@
       "requirement": "Restrict inbound traffic to only that which is necessary for the cardholder data environment (CDE). All other traffic must be denied.",
       "severity": "High",
       "category": "Network Security",
-      "code_indicators": ["0.0.0.0/0", "allow all", "ANY ANY", "ALLOW *", "inbound.*any"],
+      "code_indicators": ["0.0.0.0/0", "allow all", "ANY ANY", "ALLOW \\*", "inbound.*any"],
       "ai_prompt_hint": "Look for firewall rules, network policies, security group configurations, or IaC (Terraform/CloudFormation) resources that allow unrestricted inbound access to CDE components."
     },
     {
