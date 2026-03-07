@@ -68,7 +68,10 @@ jobs:
       - name: Cache rule embeddings
         uses: actions/cache@v4
         with:
-          path: ~/.pci-auditor/rule_embeddings.json
+          path: |
+            ~/.pci-auditor/rule_embeddings.json
+            ~/.pci-auditor/azure_search_rules_meta.json
+            ~/.pci-auditor/azure_search_rules_hash.txt
           key: pci-embeddings-${{ hashFiles('**/pci_rules.json') }}
 
       - name: Build rule embedding index (RAG)
