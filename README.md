@@ -525,6 +525,101 @@ Replaces the local index file with a cloud-hosted vector index:
 
 ---
 
+### One-click Azure infrastructure provisioning
+
+Instead of creating Azure resources by hand, use the provided Bicep template and
+PowerShell deploy script in the `infra/` directory. A single command provisions
+everything and writes a ready-to-use `.env` file.
+
+#### What gets deployed
+
+| Resource | Always? | What it does |
+|---|---|---|
+| **Azure OpenAI account** | ✓ | Container for both model deployments, gives you the endpoint URL and API key |
+| **gpt-4o deployment** (10K TPM) | ✓ | Reads source-code chunks and returns PCI DSS 4.0 findings as JSON |
+| **text-embedding-3-small deployment** (10K TPM) | ✓ | Converts rules and code chunks to vectors for the RAG step |
+| **Azure AI Search** (Basic tier) | Optional (`-IncludeSearch`) | Cloud-hosted vector index — use this for CI/CD or multi-developer teams; omit it to use the free built-in local index instead |
+
+All resource names are automatically suffixed with a hash of the resource group ID so
+they are globally unique and require no manual naming.
+
+#### Requirements
+
+- [Azure CLI](https://aka.ms/installazurecli) installed and on `PATH`
+- An Azure subscription with quota for GPT-4o in your chosen region
+  (recommended regions: `eastus`, `eastus2`, `swedencentral`, `australiaeast`)
+
+#### Run the deploy script
+
+```powershell
+# Minimal — no AI Search, local cosine index (free, no extra infra)
+.\infra\deploy.ps1 -ResourceGroup rg-pci-auditor -Location eastus
+
+# Full — includes Azure AI Search for CI/CD pipelines
+.\infra\deploy.ps1 -ResourceGroup rg-pci-auditor -Location swedencentral `
+    -Prefix myproj -IncludeSearch
+
+# Custom capacity (useful if you hit throttling on large repos)
+.\infra\deploy.ps1 -ResourceGroup rg-pci-auditor -Location eastus `
+    -Gpt4oCapacityK 30 -EmbeddingCapacityK 20
+```
+
+The script will:
+
+1. Check for `az` CLI and open a browser login if you are not already authenticated
+2. Create the resource group if it does not exist
+3. Deploy `infra/main.bicep` (~3–6 minutes)
+4. Extract all endpoint URLs and API keys from the deployment outputs
+5. Write a complete `.env` file to the `pci-auditor/` directory — **no manual copy-paste required**
+
+#### What the generated `.env` looks like
+
+```dotenv
+AZURE_OPENAI_ENDPOINT=https://pciaudit-openai-<hash>.openai.azure.com/
+AZURE_OPENAI_API_KEY=<key>
+AZURE_OPENAI_DEPLOYMENT=gpt-4o
+AZURE_OPENAI_API_VERSION=2024-02-01
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+PCI_AUDITOR_TOP_K_RULES=8
+
+# (only present when -IncludeSearch is specified)
+AZURE_SEARCH_ENDPOINT=https://pciaudit-search-<hash>.search.windows.net
+AZURE_SEARCH_API_KEY=<key>
+AZURE_SEARCH_INDEX_NAME=pci-rules
+```
+
+#### After the script completes
+
+```bash
+cd pci-auditor
+pip install -e .
+
+# If you deployed AI Search, upload the rule embeddings once:
+pci-auditor rules index-build --backend azure-search
+
+# Run your first scan
+pci-auditor scan codebase --path ../sample-vulnerable-app
+```
+
+#### Script parameters
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-ResourceGroup` | ✓ | — | Azure resource group to create or reuse |
+| `-Location` | ✓ | — | Azure region (e.g. `eastus`, `swedencentral`) |
+| `-Prefix` | | `pciaudit` | 3–8 lowercase chars prepended to resource names |
+| `-SubscriptionId` | | active CLI subscription | Override the target subscription |
+| `-IncludeSearch` | | off | Deploy Azure AI Search for cloud vector index |
+| `-SearchSku` | | `basic` | `free` \| `basic` \| `standard` — **free does not support vector search** |
+| `-Gpt4oCapacityK` | | `10` | GPT-4o capacity in thousands of TPM (1 unit = 1,000 TPM) |
+| `-EmbeddingCapacityK` | | `10` | Embedding model capacity in thousands of TPM |
+
+> **Security note:** The generated `.env` file is git-ignored by default. The API keys
+> are also stored in the ARM deployment history of the resource group. For production
+> workloads rotate the keys after provisioning and prefer managed identity.
+
+---
+
 ### Installation
 
 ```bash

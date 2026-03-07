@@ -1,0 +1,71 @@
+# PCI DSS 4.0 Compliance Audit — Caller Workflow
+#
+# This workflow calls the reusable scan workflow from pci-auditor repository.
+# All secrets are inherited from the pci-auditor repository.
+#
+# This target repository NO LONGER needs its own Azure credentials.
+# It simply inherits them from pci-auditor via 'secrets: inherit'.
+
+name: PCI DSS Compliance Audit
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of scan to run'
+        required: true
+        default: 'codebase'
+        type: choice
+        options:
+          - pr
+          - codebase
+      path:
+        description: 'Path to scan (default: workspace root)'
+        required: false
+        default: '.'
+        type: string
+      output_format:
+        description: 'Output format'
+        required: false
+        default: 'sarif'
+        type: choice
+        options:
+          - console
+          - json
+          - sarif
+      output_file:
+        description: 'Output file path'
+        required: false
+        default: 'pci-results.sarif'
+        type: string
+      fail_on:
+        description: 'Severities to fail on (comma-separated)'
+        required: false
+        default: 'critical,high'
+        type: string
+      no_ai:
+        description: 'Disable AI analysis (pattern-only)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  scan:
+    name: Run PCI DSS Audit
+    uses: nilavanrajamani/pci-auditor/.github/workflows/pci-scan-reusable.yml@main
+    with:
+      scan_type: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.scan_type || (github.event_name == 'pull_request' && 'pr' || 'codebase') }}
+      path: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.path || '.' }}
+      output_format: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.output_format || 'sarif' }}
+      output_file: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.output_file || 'pci-results.sarif' }}
+      fail_on: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on || 'critical,high' }}
+      no_ai: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.no_ai || false }}
+    secrets: inherit
