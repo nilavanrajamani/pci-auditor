@@ -468,6 +468,7 @@ class RuleRetriever:
 def build_retriever(
     cfg: "AuditorConfig",
     all_rules: List[PciRule],
+    prefer_azure_search: bool = True,
 ) -> Optional[RuleRetriever]:
     """Build a :class:`RuleRetriever` from config, or return ``None``.
 
@@ -477,9 +478,11 @@ def build_retriever(
     * Azure OpenAI credentials are missing, OR
     * The local index cache doesn't exist (user hasn't run ``rules index-build``).
 
-    When ``AZURE_SEARCH_ENDPOINT`` and ``AZURE_SEARCH_API_KEY`` are set the
-    Azure AI Search backend is used; otherwise the local cosine-similarity
-    backend is used.
+    *prefer_azure_search* controls whether the Azure AI Search backend is
+    allowed.  When ``False`` (i.e. ``--detection-mode embeddings``), the local
+    cosine-similarity index is used even if Azure Search credentials are present.
+    When ``True`` (i.e. ``--detection-mode azure-search``) Azure Search is used
+    whenever the relevant env vars are configured.
     """
     if not getattr(cfg, "azure_openai_embedding_deployment", ""):
         return None
@@ -507,8 +510,10 @@ def build_retriever(
         logger.warning("Could not create EmbeddingClient: %s", exc)
         return None
 
-    if getattr(cfg, "azure_search_endpoint", "") and getattr(
-        cfg, "azure_search_api_key", ""
+    if (
+        prefer_azure_search
+        and getattr(cfg, "azure_search_endpoint", "")
+        and getattr(cfg, "azure_search_api_key", "")
     ):
         index: Union[LocalRuleIndex, AzureSearchRuleIndex] = AzureSearchRuleIndex(
             search_endpoint=cfg.azure_search_endpoint,

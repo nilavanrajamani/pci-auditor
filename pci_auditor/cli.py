@@ -54,7 +54,22 @@ def scan() -> None:
 @click.option("--head", default="HEAD", show_default=True,
               help="HEAD ref to compare (default: current HEAD).")
 @click.option("--no-ai", is_flag=True, default=False,
-              help="Disable Azure OpenAI analysis (pattern-only scan).")
+              help="Disable Azure OpenAI analysis (pattern-only scan). "
+                   "Equivalent to --detection-mode pattern.")
+@click.option(
+    "--detection-mode",
+    default=None,
+    type=click.Choice(["pattern", "ai", "embeddings", "azure-search"], case_sensitive=False),
+    help=(
+        "Detection layers to activate:\n\n"
+        "  pattern      — Regex/keyword rules only. Fast, zero cost, no AI.\n"
+        "  ai           — Regex + Azure OpenAI model. AI understands code intent.\n"
+        "  embeddings   — Regex + AI + local text-embedding retriever. "
+        "Semantic rule selection per chunk (run 'rules index-build' first).\n"
+        "  azure-search — Regex + AI + Azure Cognitive Search index. "
+        "Hybrid BM25+vector ranking with category filters for highest precision."
+    ),
+)
 @click.option("--fail-on", default=None,
               help="Comma-separated severity levels that fail the build. "
                    "Default from config (critical,high).")
@@ -69,6 +84,7 @@ def scan_pr(
     base_branch: str,
     head: str,
     no_ai: bool,
+    detection_mode: Optional[str],
     fail_on: Optional[str],
     output_format: Optional[str],
     output_file: Optional[str],
@@ -79,7 +95,7 @@ def scan_pr(
 
     repo = Path(repo_path).resolve()
     cfg = load_config(repo)
-    _apply_cli_overrides(cfg, no_ai, fail_on, output_format, output_file)
+    _apply_cli_overrides(cfg, no_ai, detection_mode, fail_on, output_format, output_file)
 
     from pci_auditor.scanner.pr_scanner import get_diff_files
     from pci_auditor.scanner.file_scanner import scan_file
@@ -105,8 +121,8 @@ def scan_pr(
     rule_retriever = _build_rule_retriever(cfg, rules)
     result = ScanResult()
 
-    ai_note = " [dim](AI enabled)[/dim]" if ai_client else ""
-    console.print(f"[bold]Scanning {len(diff_files)} changed file(s)[/bold]{ai_note}")
+    console.print(_mode_banner(cfg))
+    console.print(f"[bold]Scanning {len(diff_files)} changed file(s)[/bold]")
 
     with Progress(
         SpinnerColumn(),
@@ -153,7 +169,22 @@ def scan_pr(
               help="Root directory of the codebase to scan.")
 @click.option("--exclude", default=None,
               help="Comma-separated glob patterns to exclude (merged with defaults).")
-@click.option("--no-ai", is_flag=True, default=False)
+@click.option("--no-ai", is_flag=True, default=False,
+              help="Disable Azure OpenAI analysis. Equivalent to --detection-mode pattern.")
+@click.option(
+    "--detection-mode",
+    default=None,
+    type=click.Choice(["pattern", "ai", "embeddings", "azure-search"], case_sensitive=False),
+    help=(
+        "Detection layers to activate:\n\n"
+        "  pattern      — Regex/keyword rules only. Fast, zero cost, no AI.\n"
+        "  ai           — Regex + Azure OpenAI model. AI understands code intent.\n"
+        "  embeddings   — Regex + AI + local text-embedding retriever. "
+        "Semantic rule selection per chunk (run 'rules index-build' first).\n"
+        "  azure-search — Regex + AI + Azure Cognitive Search index. "
+        "Hybrid BM25+vector ranking with category filters for highest precision."
+    ),
+)
 @click.option("--fail-on", default=None,
               help="Comma-separated severity levels that fail the build.")
 @click.option("--output-format", default=None,
@@ -164,6 +195,7 @@ def scan_codebase(
     path: str,
     exclude: Optional[str],
     no_ai: bool,
+    detection_mode: Optional[str],
     fail_on: Optional[str],
     output_format: Optional[str],
     output_file: Optional[str],
@@ -178,7 +210,7 @@ def scan_codebase(
         sys.exit(EXIT_ERROR)
 
     cfg = load_config(root)
-    _apply_cli_overrides(cfg, no_ai, fail_on, output_format, output_file)
+    _apply_cli_overrides(cfg, no_ai, detection_mode, fail_on, output_format, output_file)
     if exclude:
         cfg.exclude_paths.extend(p.strip() for p in exclude.split(","))
 
@@ -204,8 +236,8 @@ def scan_codebase(
         _output_results(result, cfg, repo_root=root)
         sys.exit(EXIT_OK)
 
-    ai_note = " [dim](AI analysis enabled — may be slow for large codebases)[/dim]" if ai_client else ""
-    console.print(f"[bold]Scanning {len(all_files)} file(s) in[/bold] {root}{ai_note}")
+    console.print(_mode_banner(cfg))
+    console.print(f"[bold]Scanning {len(all_files)} file(s) in[/bold] {root}")
 
     with Progress(
         SpinnerColumn(),
@@ -438,15 +470,32 @@ def rules_index_build(path: str, backend: str, verbose: bool, force: bool) -> No
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Detection mode → (use_ai, use_embeddings, use_azure_search)
+_DETECTION_MODE_FLAGS: dict[str, tuple[bool, bool, bool]] = {
+    "pattern":      (False, False, False),
+    "ai":           (True,  False, False),
+    "embeddings":   (True,  True,  False),
+    "azure-search": (True,  True,  True),
+}
+
+
 def _apply_cli_overrides(
     cfg: AuditorConfig,
     no_ai: bool,
+    detection_mode: Optional[str],
     fail_on: Optional[str],
     output_format: Optional[str],
     output_file: Optional[str],
 ) -> None:
-    if no_ai:
+    # --detection-mode takes precedence; --no-ai is a shorthand for "pattern"
+    if detection_mode:
+        cfg.use_ai, cfg.use_embeddings, cfg.use_azure_search = (
+            _DETECTION_MODE_FLAGS[detection_mode.lower()]
+        )
+    elif no_ai:
         cfg.use_ai = False
+        cfg.use_embeddings = False
+        cfg.use_azure_search = False
     if fail_on:
         cfg.fail_on = [s.strip().lower() for s in fail_on.split(",")]
     if output_format:
@@ -455,22 +504,47 @@ def _apply_cli_overrides(
         cfg.output_file = output_file
 
 
+_MODE_LABELS = {
+    (False, False, False): ("pattern",      "yellow",  "Regex/keyword rules only — no AI"),
+    (True,  False, False): ("ai",            "cyan",    "Regex + Azure OpenAI model"),
+    (True,  True,  False): ("embeddings",    "blue",    "Regex + AI + local embedding retriever"),
+    (True,  True,  True):  ("azure-search",  "magenta", "Regex + AI + Azure Cognitive Search"),
+}
+
+
+def _mode_banner(cfg: AuditorConfig) -> str:
+    key = (cfg.use_ai, cfg.use_embeddings, cfg.use_azure_search)
+    name, colour, description = _MODE_LABELS.get(
+        key, ("custom", "white", "Custom detection configuration")
+    )
+    return (
+        f"[{colour}]Detection mode:[/{colour}] "
+        f"[bold {colour}]{name}[/bold {colour}] "
+        f"[dim]— {description}[/dim]"
+    )
+
+
 def _build_rule_retriever(cfg: AuditorConfig, all_rules: list):
     """Build a RuleRetriever for semantic rule selection, or return None.
 
     Returns None when:
-    * AI is disabled (--no-ai)
+    * AI is disabled (pattern mode)
+    * use_embeddings is False (ai mode — full rule injection intended)
     * AZURE_OPENAI_EMBEDDING_DEPLOYMENT is not set
     * The local index hasn't been built yet (run 'rules index-build')
     Falls back silently — scanning always works without the retriever.
     """
     if not cfg.use_ai:
         return None
+    if not cfg.use_embeddings:
+        # --detection-mode ai explicitly requests no retriever
+        return None
     if not cfg.azure_openai_embedding_deployment:
         return None
     try:
         from pci_auditor.ai.rule_index import build_retriever
-        retriever = build_retriever(cfg, all_rules)
+        # Pass azure_search preference so build_retriever knows which backend to use
+        retriever = build_retriever(cfg, all_rules, prefer_azure_search=cfg.use_azure_search)
         if retriever is None:
             import logging as _logging
             _logging.getLogger(__name__).debug(

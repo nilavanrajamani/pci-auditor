@@ -140,10 +140,20 @@ _BINARY_EXTENSIONS = {
     ".db", ".sqlite", ".bin",
 }
 
+# Documentation / plain-text file types that are never executable code.
+# Pattern matching against these produces high false-positive rates
+# (e.g. README tables containing sample code, changelogs, licence files).
+_DOCUMENTATION_EXTENSIONS = {
+    ".md", ".rst", ".txt", ".adoc", ".asciidoc",
+    ".markdown", ".mdx", ".ipynb",
+}
+
 
 def is_binary_file(path: Path) -> bool:
     if path.suffix.lower() in _BINARY_EXTENSIONS:
         return True
+    if path.suffix.lower() in _DOCUMENTATION_EXTENSIONS:
+        return True  # treat doc files the same as binary — skip pattern scanning
     try:
         with path.open("rb") as f:
             chunk = f.read(8192)

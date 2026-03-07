@@ -84,6 +84,8 @@ class AuditorConfig:
 
     # Feature flags
     use_ai: bool = True
+    use_embeddings: bool = True      # allow embedding-based rule retrieval when configured
+    use_azure_search: bool = True    # allow Azure AI Search retrieval when configured
 
 
 def load_config(repo_path: Path | None = None) -> AuditorConfig:
