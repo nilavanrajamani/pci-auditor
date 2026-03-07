@@ -12,6 +12,125 @@ from pci_auditor.rules.rule_loader import PciRule
 
 logger = logging.getLogger(__name__)
 
+# Maps file extension -> (single_line_prefix, block_open, block_close)
+# Used to skip pattern matches that fall inside comments.
+_COMMENT_STYLES: dict[str, tuple[str | None, str | None, str | None]] = {
+    ".py":    ("#",  None,  None),
+    ".rb":    ("#",  None,  None),
+    ".sh":    ("#",  None,  None),
+    ".bash":  ("#",  None,  None),
+    ".zsh":   ("#",  None,  None),
+    ".yml":   ("#",  None,  None),
+    ".yaml":  ("#",  None,  None),
+    ".toml":  ("#",  None,  None),
+    ".r":     ("#",  None,  None),
+    ".conf":  ("#",  None,  None),
+    ".tf":    ("#",  "/*",  "*/"),
+    ".ini":   (";",  None,  None),
+    ".js":    ("//", "/*",  "*/"),
+    ".ts":    ("//", "/*",  "*/"),
+    ".jsx":   ("//", "/*",  "*/"),
+    ".tsx":   ("//", "/*",  "*/"),
+    ".java":  ("//", "/*",  "*/"),
+    ".c":     ("//", "/*",  "*/"),
+    ".cpp":   ("//", "/*",  "*/"),
+    ".cc":    ("//", "/*",  "*/"),
+    ".h":     ("//", "/*",  "*/"),
+    ".hpp":   ("//", "/*",  "*/"),
+    ".cs":    ("//", "/*",  "*/"),
+    ".go":    ("//", "/*",  "*/"),
+    ".rs":    ("//", "/*",  "*/"),
+    ".php":   ("//", "/*",  "*/"),
+    ".swift": ("//", "/*",  "*/"),
+    ".kt":    ("//", "/*",  "*/"),
+    ".kts":   ("//", "/*",  "*/"),
+    ".scala": ("//", "/*",  "*/"),
+    ".sql":   ("--", "/*",  "*/"),
+    ".html":  (None, "<!--", "-->"),
+    ".xml":   (None, "<!--", "-->"),
+}
+
+
+def _comment_start_col(
+    line: str,
+    single_prefix: str | None,
+    block_open: str | None,
+    in_block: bool,
+) -> tuple[int, bool]:
+    """Return (comment_start_col, new_in_block).
+
+    *comment_start_col* is the 0-based column at which a comment begins on
+    *line*, or ``len(line)`` when there is no comment region.  Uses a simple
+    quote-tracking scan so that ``//`` or ``#`` inside a string literal is
+    not mistaken for a comment start.
+    """
+    if in_block:
+        # Whole line is inside a block comment until the closing token.
+        if block_open is not None:
+            # Derive block_close from convention (always paired with block_open)
+            block_close = "*/" if block_open == "/*" else "-->"
+            idx = line.find(block_close)
+            if idx != -1:
+                # Block ends on this line; code may resume after the close token.
+                # Conservatively mark the whole line as comment (the re-opened
+                # code portion is rare and can still be scanned in next line).
+                return 0, False
+        return 0, True
+
+    in_single_q = False
+    in_double_q = False
+    i = 0
+    n = len(line)
+
+    while i < n:
+        ch = line[i]
+
+        if not in_single_q and not in_double_q:
+            # Check block-comment open first (e.g. "/*")
+            if block_open and line[i: i + len(block_open)] == block_open:
+                return i, True
+            # Check single-line comment prefix (e.g. "#", "//", "--")
+            if single_prefix and line[i: i + len(single_prefix)] == single_prefix:
+                return i, False
+            if ch == "'":
+                in_single_q = True
+            elif ch == '"':
+                in_double_q = True
+        elif in_single_q:
+            if ch == "\\":
+                i += 1  # skip escaped character
+            elif ch == "'":
+                in_single_q = False
+        else:  # in_double_q
+            if ch == "\\":
+                i += 1
+            elif ch == '"':
+                in_double_q = False
+        i += 1
+
+    return n, False  # no comment found on this line
+
+
+def _build_comment_cols(
+    lines: list[str],
+    single_prefix: str | None,
+    block_open: str | None,
+) -> list[int]:
+    """Pre-compute the comment-start column for every line in a file.
+
+    Returns a list of length ``len(lines)`` where each element is the
+    0-based column at which a comment starts, or ``len(line)`` when there is
+    no comment region.  Lines that are entirely inside a block comment have
+    column 0.
+    """
+    cols: list[int] = []
+    in_block = False
+    for line in lines:
+        col, in_block = _comment_start_col(line, single_prefix, block_open, in_block)
+        cols.append(col)
+    return cols
+
+
 _BINARY_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg",
     ".pdf", ".zip", ".tar", ".gz", ".7z", ".rar",
@@ -106,8 +225,19 @@ def _pattern_scan(
     rules: List[PciRule],
     changed_lines: Optional[set],
 ) -> List[Finding]:
-    """Run regex-based pattern matching against each line."""
+    """Run regex-based pattern matching against each line.
+
+    Matches that fall entirely within a comment region are silently skipped
+    so that explanatory comments that mention security keywords do not produce
+    false-positive findings.  Comment detection is language-aware based on the
+    file extension (see ``_COMMENT_STYLES``).
+    """
     findings: List[Finding] = []
+
+    # Pre-compute the column at which each line's comment region starts.
+    ext = Path(file_path).suffix.lower()
+    single_prefix, block_open, _ = _COMMENT_STYLES.get(ext, (None, None, None))
+    comment_cols = _build_comment_cols(lines, single_prefix, block_open)
 
     for rule in rules:
         if not rule.code_indicators:
@@ -129,9 +259,14 @@ def _pattern_scan(
             if changed_lines is not None and line_no not in changed_lines:
                 continue
 
+            comment_col = comment_cols[line_no - 1]
+
             for pattern in compiled_patterns:
                 match = pattern.search(line)
                 if match:
+                    # Skip matches that start inside a comment region.
+                    if match.start() >= comment_col:
+                        continue
                     findings.append(
                         Finding(
                             rule_id=rule.id,
