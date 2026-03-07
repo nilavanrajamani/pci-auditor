@@ -60,7 +60,7 @@ cd c:\codebase\innovation-challenge-mar-26\pci-auditor   # .env is here
 1. Start recording
 2. Type and run:
    ```powershell
-   pci-auditor scan pr --repo-path c:\codebase\innovation-challenge-mar-26\sample-vulnerable-app --base-branch origin/main --no-ai
+   pci-auditor scan pr --repo-path c:\codebase\innovation-challenge-mar-26\sample-vulnerable-app --base-branch origin/main --detection-mode pattern
    ```
 3. Results appear almost instantly
 4. Summary table visible → stop recording

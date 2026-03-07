@@ -164,7 +164,7 @@ tool falls back silently to injecting all rules.
 - Files are chunked at 200 lines (configurable) to stay within token limits.
 - In PR mode, only **changed lines** are sent — massively reducing token usage on large repos.
 - RAG reduces prompt size further by sending only the top-K relevant rules per chunk (default 8, configurable via `PCI_AUDITOR_TOP_K_RULES`).
-- `--no-ai` flag enables pattern-only scanning for fast offline / cost-free runs.
+- `--detection-mode pattern` enables pattern-only scanning for fast offline / cost-free runs (legacy alias: `--no-ai`).
 - The AI client gracefully degrades to pattern-only mode if credentials are absent.
 
 ---
@@ -707,24 +707,44 @@ your code so the whole team uses the same scan settings.
 ### Scan a pull request
 
 ```bash
-# Scan only lines changed vs. main branch
+# Scan only lines changed vs. main branch (AI + embeddings by default)
 pci-auditor scan pr --repo-path . --base-branch main
+
+# Pattern-only (no AI, offline)
+pci-auditor scan pr --repo-path . --base-branch main --detection-mode pattern
 ```
 
 ### Scan an entire codebase
 
 ```bash
-# Full scan with AI, output to console
-pci-auditor scan codebase --path /path/to/repo
+# Pattern-only scan (no AI, fast, offline)
+pci-auditor scan codebase --path /path/to/repo --detection-mode pattern
 
-# Pattern-only (no AI, fast)
-pci-auditor scan codebase --path /path/to/repo --no-ai
+# AI scan only (no RAG embeddings)
+pci-auditor scan codebase --path /path/to/repo --detection-mode ai
+
+# AI scan + local cosine-similarity RAG (default when embeddings index is built)
+pci-auditor scan codebase --path /path/to/repo --detection-mode embeddings
+
+# AI scan + Azure AI Search RAG (for CI/CD / multi-developer teams)
+pci-auditor scan codebase --path /path/to/repo --detection-mode azure-search
 
 # Output SARIF for Azure DevOps Security tab
 pci-auditor scan codebase --path /path/to/repo \
   --output-format sarif \
   --output-file results.sarif
 ```
+
+> **Detection modes at a glance**
+>
+> | `--detection-mode` | AI? | RAG? | Cloud required? |
+> |---|---|---|---|
+> | `pattern` | No | No | No |
+> | `ai` | Yes | No | Azure OpenAI only |
+> | `embeddings` | Yes | Local JSON index | Azure OpenAI only |
+> | `azure-search` | Yes | Azure AI Search | Azure OpenAI + AI Search |
+>
+> When omitted, pci-auditor automatically selects the best mode based on available credentials and index.
 
 ### Manage rules
 
