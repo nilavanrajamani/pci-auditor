@@ -47,7 +47,7 @@ def scan() -> None:
 
 
 @scan.command("pr")
-@click.option("--repo-path", default=".", show_default=True,
+@click.option("--repo-path", "--path", default=".", show_default=True,
               help="Path to the git repository root.")
 @click.option("--base-branch", default="main", show_default=True,
               help="Base branch to diff against (e.g. origin/main).")
@@ -128,7 +128,7 @@ def scan_pr(
 # ---------------------------------------------------------------------------
 
 @scan.command("codebase")
-@click.option("--path", default=".", show_default=True,
+@click.option("--path", "--repo-path", default=".", show_default=True,
               help="Root directory of the codebase to scan.")
 @click.option("--exclude", default=None,
               help="Comma-separated glob patterns to exclude (merged with defaults).")
