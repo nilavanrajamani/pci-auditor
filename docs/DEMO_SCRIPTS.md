@@ -33,6 +33,8 @@ cd c:\codebase\innovation-challenge-mar-26\pci-auditor   # .env is here
 
 ## GIF 1 — PR Scan with AI (~20s)
 
+**Save to:** `docs/demo-pr-ai.gif`
+
 **Shows:** Core value — AI-powered scan of changed lines, catches critical violations.
 
 **Steps to record:**
@@ -50,6 +52,8 @@ cd c:\codebase\innovation-challenge-mar-26\pci-auditor   # .env is here
 
 ## GIF 2 — PR Scan Pattern-Only / Fast Mode (~10s)
 
+**Save to:** `docs/demo-pr-fast.gif`
+
 **Shows:** Instant offline scan — no Azure needed, sub-second results in CI.
 
 **Steps to record:**
@@ -65,6 +69,8 @@ cd c:\codebase\innovation-challenge-mar-26\pci-auditor   # .env is here
 
 ## GIF 3 — GitHub Actions PR Build Blocking (~20s)
 
+**Save to:** `docs/demo-ci.gif`
+
 **Shows:** CI/CD integration — the pipeline automatically runs on every PR and blocks merge on violations.
 
 **Steps to record:**
@@ -74,21 +80,6 @@ cd c:\codebase\innovation-challenge-mar-26\pci-auditor   # .env is here
 4. Show the steps expanding: checkout → pci-auditor scan → red ❌ step failure
 5. Scroll to show the violation summary in the step logs
 6. Stop recording
-
----
-
-## GIF 4 — Verbose Mode: Why Each Line Fails (~15s)
-
-**Shows:** Detailed rule explanations — useful for developers who want to understand the violation.
-
-**Steps to record:**
-1. Start recording
-2. Type and run:
-   ```powershell
-   pci-auditor scan pr --repo-path c:\codebase\innovation-challenge-mar-26\sample-vulnerable-app --base-branch origin/main --no-ai --verbose
-   ```
-3. Extra log lines appear showing rule IDs matched and why
-4. Full violation output with remediation guidance → stop recording
 
 ---
 
