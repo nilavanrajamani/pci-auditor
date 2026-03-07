@@ -85,6 +85,10 @@ def scan_pr(
     from pci_auditor.scanner.file_scanner import scan_file
     from pci_auditor.rules.rule_loader import load_rules
     from pci_auditor.models import ScanResult
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
+    from rich.console import Console
+
+    console = Console(stderr=True)
 
     try:
         diff_files = get_diff_files(repo, base_branch, head)
@@ -101,23 +105,40 @@ def scan_pr(
     rule_retriever = _build_rule_retriever(cfg, rules)
     result = ScanResult()
 
-    for diff_file in diff_files:
-        file_path = repo / diff_file.path
-        if not file_path.exists():
-            continue  # Deleted file
+    ai_note = " [dim](AI enabled)[/dim]" if ai_client else ""
+    console.print(f"[bold]Scanning {len(diff_files)} changed file(s)[/bold]{ai_note}")
 
-        file_findings = scan_file(
-            file_path=file_path,
-            rules=rules,
-            ai_client=ai_client,
-            chunk_lines=cfg.chunk_lines,
-            max_file_size_kb=cfg.max_file_size_kb,
-            changed_lines=diff_file.added_line_numbers,
-            rule_retriever=rule_retriever,
-        )
-        result.findings.extend(file_findings)
-        result.scanned_files += 1
-        result.scanned_lines += len(diff_file.added_line_numbers)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Scanning...", total=len(diff_files))
+
+        for diff_file in diff_files:
+            file_path = repo / diff_file.path
+            progress.update(task, description=f"[cyan]{file_path.name}[/cyan]")
+            if not file_path.exists():
+                progress.advance(task)
+                continue  # Deleted file
+
+            file_findings = scan_file(
+                file_path=file_path,
+                rules=rules,
+                ai_client=ai_client,
+                chunk_lines=cfg.chunk_lines,
+                max_file_size_kb=cfg.max_file_size_kb,
+                changed_lines=diff_file.added_line_numbers,
+                rule_retriever=rule_retriever,
+            )
+            result.findings.extend(file_findings)
+            result.scanned_files += 1
+            result.scanned_lines += len(diff_file.added_line_numbers)
+            progress.advance(task)
 
     _output_results(result, cfg, repo_root=repo)
     sys.exit(EXIT_VIOLATIONS if should_fail(result.findings, cfg.fail_on) else EXIT_OK)
