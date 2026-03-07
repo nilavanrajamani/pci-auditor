@@ -3,6 +3,8 @@
 A developer-first PCI DSS 4.0 compliance scanner that detects payment card security
 violations in source code — powered by Azure OpenAI and integrated into CI/CD pipelines.
 
+![PCI Auditor CLI in action — scanning a codebase and surfacing PCI DSS violations](docs/demo.gif)
+
 ---
 
 ## The Problem
