@@ -94,6 +94,7 @@ jobs:
             --repo-path "$GITHUB_WORKSPACE" \
             --base-branch "origin/${{ inputs.base_branch }}" \
             --head HEAD \
+            --detection-mode azure-search \
             --output-format sarif \
             --output-file pci-results/pci-pr-results.sarif \
             --fail-on ${{ inputs.fail_on }}
