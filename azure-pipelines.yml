@@ -45,7 +45,7 @@ stages:
           vmImage: "ubuntu-latest"
         steps:
           - checkout: self
-            fetchDepth: 0        # Full history needed for accurate git diff
+            fetchDepth: "0"        # Full history needed for accurate git diff
             displayName: "Checkout (full history)"
 
           - task: UsePythonVersion@0
@@ -73,7 +73,7 @@ stages:
               AZURE_SEARCH_ENDPOINT: $(AZURE_SEARCH_ENDPOINT)
               AZURE_SEARCH_API_KEY: $(AZURE_SEARCH_API_KEY)
               AZURE_SEARCH_INDEX_NAME: $(AZURE_SEARCH_INDEX_NAME)
-            continueOnError: true
+            continueOnError: "true"
 
           - script: |
               pci-auditor scan pr \
@@ -95,7 +95,7 @@ stages:
               AZURE_SEARCH_API_KEY: $(AZURE_SEARCH_API_KEY)
               AZURE_SEARCH_INDEX_NAME: $(AZURE_SEARCH_INDEX_NAME)
             # Exit code 1 = violations found → task fails → PR build fails
-            failOnStderr: false
+            failOnStderr: "false"
 
           - task: PublishBuildArtifacts@1
             condition: always()     # Upload results even on failure
@@ -127,7 +127,7 @@ stages:
           vmImage: "ubuntu-latest"
         steps:
           - checkout: self
-            fetchDepth: 1
+            fetchDepth: "1"
             displayName: "Checkout"
 
           - task: UsePythonVersion@0
@@ -149,7 +149,7 @@ stages:
               pci-auditor rules update || echo "Rule update failed, using bundled rules"
               pci-auditor rules info
             displayName: "Update PCI DSS rules"
-            continueOnError: true
+            continueOnError: "true"
 
           - script: |
               pci-auditor rules index-build --backend azure-search || echo "Index build failed — will use all rules"
@@ -162,7 +162,7 @@ stages:
               AZURE_SEARCH_ENDPOINT: $(AZURE_SEARCH_ENDPOINT)
               AZURE_SEARCH_API_KEY: $(AZURE_SEARCH_API_KEY)
               AZURE_SEARCH_INDEX_NAME: $(AZURE_SEARCH_INDEX_NAME)
-            continueOnError: true
+            continueOnError: "true"
 
           - script: |
               pci-auditor scan codebase \
@@ -181,7 +181,7 @@ stages:
               AZURE_SEARCH_ENDPOINT: $(AZURE_SEARCH_ENDPOINT)
               AZURE_SEARCH_API_KEY: $(AZURE_SEARCH_API_KEY)
               AZURE_SEARCH_INDEX_NAME: $(AZURE_SEARCH_INDEX_NAME)
-            failOnStderr: false
+            failOnStderr: "false"
 
           # JSON report for downstream tooling / dashboards
           - script: |
@@ -192,7 +192,7 @@ stages:
                 --output-file "$(sarifOutputDir)/pci-full-results.json" \
                 --fail-on none
             displayName: "Generate JSON report (pattern-only)"
-            continueOnError: true
+            continueOnError: "true"
 
           - task: PublishBuildArtifacts@1
             condition: always()
