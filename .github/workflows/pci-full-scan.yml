@@ -80,11 +80,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install git+https://github.com/nilavanrajamani/pci-auditor.git@main
 
-      - name: Cache rule embeddings
-        uses: actions/cache@v4
+      - name: Restore rule embeddings cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
         with:
           path: |
-            ~/.pci-auditor/rule_embeddings.json
             ~/.pci-auditor/azure_search_rules_meta.json
             ~/.pci-auditor/azure_search_rules_hash.txt
           key: pci-embeddings-${{ github.run_id }}
@@ -126,6 +126,15 @@ jobs:
         with:
           sarif_file: pci-results/${{ inputs.output_file }}
           category: pci-dss-manual
+
+      - name: Save rule embeddings cache
+        if: always() && steps.cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.pci-auditor/azure_search_rules_meta.json
+            ~/.pci-auditor/azure_search_rules_hash.txt
+          key: pci-embeddings-${{ github.run_id }}
 
       - name: Upload artifacts
         if: always()
