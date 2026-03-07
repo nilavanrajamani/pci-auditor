@@ -4,7 +4,7 @@ A developer-first PCI DSS 4.0 compliance scanner that detects payment card secur
 violations in source code — powered by Azure OpenAI and integrated into CI/CD pipelines.
 
 **PR scan with AI analysis** — catches violations the moment code changes:
-![PR scan with AI](docs/demo-pr-ai.gif)
+![PR scan with AI](docs/demo-pi-ai.gif)
 
 **Fast pattern-only mode** — instant results, no cloud required:
 ![PR scan fast mode](docs/demo-pr-fast.gif)
