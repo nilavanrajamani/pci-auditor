@@ -40,3 +40,6 @@ pci-results/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local-only notes (not for source control)
+VIDEO_SCRIPT.md
