@@ -84,19 +84,21 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    subgraph SETUP ["🔧  Phase 1 — Index Building   (run once)"]
+    subgraph SETUP ["🔧  Phase 1 — Index Building"]
         direction TB
+        NOTE1["Run once before the first scan"]:::note
         RULES["📋 PCI DSS Rules<br/>27 controls from pci_rules.json"]
         EMBD1["🔢 text-embedding-3-small<br/>Each rule description → vector"]
         INDEX["🗂️ Azure AI Search<br/>Rule vectors stored in cloud index"]
-        RULES --> EMBD1 --> INDEX
+        NOTE1 --> RULES --> EMBD1 --> INDEX
     end
 
-    subgraph SCAN ["🔍  Phase 2 — PR Scan   (every pull request)"]
+    subgraph SCAN ["🔍  Phase 2 — PR Scan"]
         direction TB
+        NOTE2["Runs automatically on every pull request"]:::note
         PR["🔀 Pull Request / Code Change"]
         CLI["⚙️ pci-auditor CLI<br/>Splits files into code chunks"]
-        PR --> CLI
+        NOTE2 --> PR --> CLI
 
         REGEX["⚡ Stage 1 · Regex Scanner<br/>Catches literal violations instantly<br/>No cloud · free · offline"]
         AISTAGE["🤖 Stage 2 · AI Analysis"]
@@ -133,6 +135,7 @@ flowchart LR
     style GPT     fill:#e9d7fe,stroke:#6f42c1,stroke-width:2px
     style INDEX   fill:#d1f2eb,stroke:#198754,stroke-width:2px
     style SEARCHQ fill:#d1f2eb,stroke:#198754,stroke-width:2px
+    classDef note fill:#fffbe6,stroke:#aaa,stroke-dasharray:4 2,color:#666,font-style:italic
 ```
 
 ---
