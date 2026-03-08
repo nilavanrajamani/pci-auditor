@@ -289,199 +289,27 @@ angle between two vectors. A score near `1.0` means nearly identical meaning; ne
 #### Step 1 — Index-build: rules → vectors  *(runs once)*
 
 `pci-auditor rules index-build` sends each of the 27 rule descriptions to the embedding
-model and persists the resulting vectors to whichever backend you choose:
+model and persists the resulting vectors to whichever backend you choose. The full
+pipeline is shown in [Phase 1 — Index Building](#end-to-end-flow) in the End-to-End Flow diagram.
 
-```
- pci_auditor/rules/pci_rules.json
- ┌────────────────────────────────────────┐
- │  Rule 3.3.1  "SAD/PAN must not         │          text-embedding-3-small
- │              be stored..."             ├─────┐    (Azure OpenAI)
- │  Rule 3.7.1  "Crypto key lifecycle..." ├───┐ │    ╔══════════════════════════╗
- │  Rule 4.2.1  "Strong crypto in         │   │ └───►║ POST /embeddings         ║
- │              transit..."               ├─┐ └─────►║ input : rule text        ║
- │  Rule 8.6.1  "Passwords not            ├┐└───────►║ output: float[1536]      ║
- │              hardcoded..."             │└─────────►║                          ║
- │  ...  (27 rules total)                 │           ╚═══════════╤══════════════╝
- └────────────────────────────────────────┘                       │  27 vectors produced
-                                                                   ▼
-                    ┌──────────────────────────────────────────────────────────┐
-                    │  rule_id │  vector              │  category   │ severity │
-                    │  ────────┼──────────────────────┼─────────────┼──────── │
-                    │  3.3.1   │  [0.12, -0.87, ...]  │  Req 3      │ critical │
-                    │  3.7.1   │  [0.45,  0.23, ...]  │  Req 3      │ high     │
-                    │  4.2.1   │  [0.22,  0.71, ...]  │  Req 4      │ critical │
-                    │  8.6.1   │  [0.67, -0.34, ...]  │  Req 8      │ high     │
-                    │  ...     │  ...                 │  ...        │ ...      │
-                    └──────────────────────┬───────────────────────────────────┘
-                                           │
-                          ┌────────────────┴────────────────────┐
-                          │                                     │
-          pci-auditor rules index-build        ...index-build --backend azure-search
-                          │                                     │
-                          ▼                                     ▼
-         ┌──────────────────────────────┐    ┌──────────────────────────────────────┐
-         │  LOCAL BACKEND               │    │  AZURE-SEARCH BACKEND                │
-         │                              │    │                                      │
-         │  ~/.pci-auditor/              │    │  Azure AI Search                     │
-         │  rule_embeddings.json         │    │  index: pci-azure-search             │
-         │                              │    │                                      │
-         │  [{                           │    │  Each document stores:               │
-         │    "rule_id": "3.3.1",        │    │   • id       (rule ID string)        │
-         │    "vector":  [0.12, ...]     │    │   • vector   (float[1536])           │
-         │  }, ...]                      │    │   • category (e.g. "Req 3", "Req 8") │
-         │                              │    │   • severity (critical/high/...)     │
-         │  Plain JSON file on disk.     │    │   • text     (rule requirement text) │
-         │  No extra infra.             │    │                                      │
-         │  Cosine computed in-process. │    │  Supports BM25 keyword search,       │
-         │  Best for: local dev.         │    │  HNSW vector search, and metadata   │
-         └──────────────────────────────┘    │  category filters.                   │
-                                             │  Best for: CI/CD pipelines.          │
-                                             └──────────────────────────────────────┘
-```
+Two backends are available:
+
+| Backend | Index location | Best for |
+|---|---|---|
+| **local** *(default)* | `~/.pci-auditor/rule_embeddings.json` — JSON on disk | Local dev, single machine |
+| **azure-search** | Azure AI Search cloud index | CI/CD, multi-developer teams |
 
 ---
 
 #### Step 2 — Scan: code chunk → query vector → top-K rules → LLM
 
 Every source file is split into ≤200-line chunks. In PR mode only changed diff hunks
-are used — massively reducing the volume of text sent to the embedding model and LLM.
-
-```
- git diff (PR mode)  /  recursive file walk (codebase mode)
-          │
-          │  extract changed lines  /  split into ≤200-line chunks
-          ▼
- ╔══════════════════════════════════════════════════════════════════╗
- ║  Code chunk  (plain text)                                        ║
- ║                                                                  ║
- ║  def process_payment(pan: str, cvv: str):                        ║
- ║      session["raw_pan"] = pan                                    ║
- ║      db.execute("INSERT INTO txn_log VALUES (?)", [pan])         ║
- ╚══════════════════════════════════════════════════════════════════╝
-          │
-          ├──────────────────────────────────────────────────────────────────────────────┐
-          │  STAGE 1 — REGEX  (always runs, free, instant)                              │
-          │                                                                             │
-          │  Each rule's code_indicators regex list matched against chunk text.         │
-          │  e.g. /pan\s*=/, /card_number/, /INSERT.*log/                              │
-          │                                                                             │
-          │  ──► Pattern findings: [{rule:"3.3.1", line:62, source:"pattern"}]         │
-          └──────────────────────────────────────────────────────────────────────────────┘
-          │
-          │  STAGE 2 — AI  (skipped when --detection-mode pattern)
-          │
-          │  [1] Embed the code chunk
-          ▼
- ╔══════════════════════════════════════════════════════════════════╗
- ║  text-embedding-3-small                                          ║
- ║  POST /embeddings  input : code chunk text                       ║
- ║                    output: query_vector  [0.10, -0.85, ...]     ║
- ╚═════════════════════════════╤════════════════════════════════════╝
-                               │
-          ┌────────────────────┼─────────────────────────────────────────────────────┐
-          │                    │                                                     │
-        ai mode          embeddings mode                                azure-search mode
-   (no RAG step)        (local cosine RAG)                           (cloud hybrid RAG)
-          │                    │                                                     │
-          ▼                    ▼                                                     ▼
-   skips vector     ┌──────────────────────────┐           ┌────────────────────────────────────────┐
-   search entirely  │  LOCAL COSINE SIMILARITY │           │  AZURE AI SEARCH — Hybrid Ranking      │
-                    │                          │           │                                        │
-   all 27 rules     │  For each of 27 stored  │           │  Step A — BM25 keyword score           │
-   injected into    │  rule vectors r_i:       │           │  Term-frequency match of chunk words   │
-   the prompt       │                          │           │  against rule text. e.g. "INSERT"      │
-                    │            query · r_i   │           │  + "log" boosts Rule 10.2.1.           │
-                    │  score  =  ───────────── │           │                                        │
-          ▼         │            |query|×|r_i| │           │  Step B — Vector cosine score          │
-                    │                          │           │  Same cosine formula, evaluated        │
-   All 27 rules──►  │  Rule   │Score│Include? │           │  server-side with HNSW index.          │
-   included in      │  ───────┼─────┼──────── │           │                                        │
-   the prompt       │  3.3.1  │0.94 │ ✓ top-K │           │  Step C — Category metadata filter     │
-                    │  3.4.1  │0.88 │ ✓ top-K │           │  Results are constrained by the        │
-                    │  3.3.2  │0.85 │ ✓ top-K │           │  "category" field before ranking.      │
-                    │  10.2.1 │0.77 │ ✓ top-K │           │  Disambiguates closely related pairs:  │
-                    │  ...    │ ... │  ...    │           │  • AES-key chunk → category            │
-                    │  12.3.3 │0.22 │ ✗ skip  │           │    "Protect Stored Account Data"       │
-                    │  2.2.7  │0.11 │ ✗ skip  │           │    → Rule 3.7.1 ranked above 8.6.2     │
-                    │                          │           │  • NullHandler chunk → category        │
-                    │  Sort descending.        │           │    "Log and Monitor"                   │
-                    │  Return top-K (default 8)│           │    → Rule 10.3.3 ranked above 10.2.1  │
-                    └──────────────┬───────────┘           │                                        │
-                                   │                       │  Final: score = α×BM25 + β×cosine     │
-                                   │                       │  Return top-K rules.                  │
-                                   │                       └───────────────────┬────────────────────┘
-                                   │                                           │
-                                   └─────────────────────┬─────────────────────┘
-                                                         │
-                                                         ▼
-                                            Top-K rules  (default: 8 of 27)
-                                                         │
-                                                         ▼
-                                  ╔═════════════════════════════════════════════╗
-                                  ║  gpt-4.1-mini  (chat completion)            ║
-                                  ║                                             ║
-                                  ║  System: "You are a PCI DSS auditor..."    ║
-                                  ║  User:   [code chunk text]                 ║
-                                  ║          Rule 3.3.1 (Critical): SAD...     ║
-                                  ║          Rule 3.4.1 (Critical): PAN...     ║
-                                  ║          ... top-K rules only, not all 27  ║
-                                  ║                                             ║
-                                  ║  Returns: JSON array of findings           ║
-                                  ╚══════════════════════╤══════════════════════╝
-                                                         │
-                                                         ▼
-                                                AI findings (JSON)
-
-                       Pattern findings  +  AI findings
-                deduplicated by (rule_id, file, line_number)
-                                                         │
-                                                         ▼
-                                                   Final report
-```
-
----
+are used — massively reducing the volume sent to the embedding model and LLM. The full
+pipeline is shown in [Phase 2 — PR Scan](#end-to-end-flow) in the End-to-End Flow diagram.
 
 #### Detection mode at a glance
 
-```
- ┌──────────────────┬────────────────────────────────────────────────────────────────────┐
- │ --detection-mode │  Pipeline                                                          │
- ├──────────────────┼────────────────────────────────────────────────────────────────────┤
- │                  │                                                                    │
- │  pattern         │  chunk ──► [REGEX] ──────────────────────────────────► findings   │
- │                  │  No embedding. No LLM. No network call.                           │
- │                  │  Cost: $0  · Instant · Catches: literal patterns only            │
- │                  │                                                                    │
- ├──────────────────┼────────────────────────────────────────────────────────────────────┤
- │                  │                                                                    │
- │  ai              │  chunk ──► [REGEX] ──────────────────────────────────► findings   │
- │                  │        └─► [LLM + ALL 27 rules injected] ──────────► findings   │
- │                  │  No embedding step. Full rule list in every prompt.               │
- │                  │  Cost: $$  · Fast   · Catches: semantic + literal               │
- │                  │                                                                    │
- ├──────────────────┼────────────────────────────────────────────────────────────────────┤
- │                  │                                                                    │
- │  embeddings      │  chunk ──► [REGEX] ──────────────────────────────────► findings   │
- │  (local cosine)  │        └─► [EMBED] ──► cosine vs local JSON                      │
- │                  │                  └─► top-K rules ──► [LLM] ────────► findings   │
- │                  │  Requires: rules index-build (once). Runs in-process.            │
- │                  │  Cost: $   · Fast   · Catches: semantic + precise rule citation  │
- │                  │                                                                    │
- ├──────────────────┼────────────────────────────────────────────────────────────────────┤
- │                  │                                                                    │
- │  azure-search    │  chunk ──► [REGEX] ──────────────────────────────────► findings   │
- │                  │        └─► [EMBED] ──► Azure AI Search                           │
- │                  │                       (BM25 + cosine + category filter)          │
- │                  │                  └─► top-K rules ──► [LLM] ────────► findings   │
- │                  │  Requires: rules index-build --backend azure-search (once).      │
- │                  │  Cost: $   · Fast   · Catches: semantic + rule-pair disambiguation│
- │                  │                                                                    │
- └──────────────────┴────────────────────────────────────────────────────────────────────┘
-
- [REGEX] = pattern scanner  (rule code_indicators regex list)
- [EMBED] = text-embedding-3-small  (Azure OpenAI Embeddings API)
- [LLM]   = gpt-4.1-mini  (Azure OpenAI Chat Completions API)
-```
+See [Scan commands](#scan-commands) in Getting Started for the full mode comparison table.
 
 ### Cost control
 
@@ -538,12 +366,7 @@ are used — massively reducing the volume of text sent to the embedding model a
 
 ### Key design decisions
 
-**Semantic rule retrieval (RAG)** — Instead of injecting all 27 rules into every AI
-prompt, each code chunk is embedded (Azure OpenAI) and compared against pre-built
-rule vectors. Only the top-K most relevant rules are sent, reducing prompt size and
-focusing model attention. Two backends: `LocalRuleIndex` (cosine similarity, JSON
-cache, no extra infra) and `AzureSearchRuleIndex` (Azure AI Search vector index).
-Falls back to full rule injection when the index isn't built.
+**Semantic rule retrieval (RAG)** — See [Semantic rule retrieval (RAG)](#semantic-rule-retrieval-rag) in the LLM Usage section for a full explanation of embeddings, cosine similarity, and the two retrieval backends.
 
 **Two-stage scanning** — Regex runs first (fast, free, offline). AI runs second on the
 same chunks, catching what regex missed. Findings are deduplicated by `(rule_id, file, line)`.
@@ -594,64 +417,9 @@ pci-auditor/
 
 ---
 
-## Azure Resources
+## Azure Service Details
 
-The tool can use up to three Azure services depending on which mode you run. Here is what each one does and why it exists.
-
----
-
-### How the resources relate to each other
-
-See the [Azure Resources](#azure-resources) diagram at the top of this document for a visual overview of how gpt-4.1-mini, text-embedding-3-small, and Azure AI Search connect.
-
----
-
-### Flow 1 — `pci-auditor rules index-build` (runs once)
-
-Sends each of the 27 PCI DSS rule descriptions to the embedding model and saves the
-resulting vectors. See detailed diagram in [Step 1 — Index-build](#step-1--index-build-rules--vectors--runs-once).
-
-```
- pci_rules.json (27 rules)
-       │  for each rule description
-       ▼
- text-embedding-3-small  →  vector[1536] per rule
-       │
-       ├─► --backend local         ~/.pci-auditor/rule_embeddings.json  (JSON on disk)
-       └─► --backend azure-search  Azure AI Search cloud index
-```
-
----
-
-### Flow 2 — `pci-auditor scan codebase` (runs every scan)
-
-Splits each file into ≤200-line chunks (PR mode: changed hunks only), runs regex, then
-optionally embeds each chunk and retrieves the top-K rules before calling the LLM. See
-detailed diagram in [Step 2 — Scan pipeline](#step-2--scan-code-chunk--query-vector--top-k-rules--llm).
-
-```
- source file / PR diff
-       │  split into ≤200-line chunks  (PR: changed lines only)
-       ▼
- ┌──────────────┐   Stage 1 — regex          ╔═══════════════════════════════════════╗
- │  Code chunk  ├──────────────────────────► ║  pattern findings  (always)           ║
- └──────┬───────┘                            ╚═══════════════════════════════════════╝
-        │
-        │   Stage 2 — AI  (if detection-mode ≠ pattern)
-        │
-        │  text-embedding-3-small                               no RAG fallback
-        ├─► chunk → vector ─► cosine (local) │ Azure Search ─► top-K rules ─────────┐
-        │                                                                             │
-        └─► (ai mode: skip vector search — inject all 27 rules directly) ───────────┘
-                                                                                      │
-                                                                                      ▼
-                                                                       gpt-4.1-mini → AI findings
-                                                                                      │
-                                                               pattern findings  +  AI findings
-                                                      deduplicated by (rule_id, file, line)
-                                                                                      │
-                                                                               Final report
-```
+The tool can use up to three Azure services depending on which mode you run. Here is what each one does and why it exists. See the [Azure Resources](#azure-resources) diagram at the top of this document for a visual overview of how the services connect, and the [End-to-End Flow](#end-to-end-flow) diagram for the index-build and scan pipelines.
 
 ---
 
