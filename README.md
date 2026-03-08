@@ -14,6 +14,14 @@ violations in source code — powered by Azure OpenAI and integrated into CI/CD 
 
 ---
 
+## VS Code Extension
+
+The **[PCI DSS Auditor](https://github.com/nilavanrajamani/vscode-pci-auditor)** VS Code extension wraps this CLI to bring compliance scanning directly into the editor — live squiggly lines, a violations tree, CodeLens buttons, and one-click **Fix with Copilot** prompts.
+
+→ [github.com/nilavanrajamani/vscode-pci-auditor](https://github.com/nilavanrajamani/vscode-pci-auditor)
+
+---
+
 ## The Problem
 
 PCI DSS 4.0 became mandatory on **March 31, 2024**. Organisations that handle payment
@@ -1054,3 +1062,12 @@ The bundled set covers 27 controls across all 12 PCI DSS 4.0.1 requirement famil
 - **No data exfiltration** — code snippets are sent to your own Azure OpenAI resource, not a shared endpoint
 - **Audit trail** — SARIF output provides a timestamped, artifact-stored record of every scan
 - **Graceful degradation** — tool is fully functional without AI credentials (pattern mode)
+
+---
+
+## Related Repositories
+
+| Repository | Description |
+|---|---|
+| [vscode-pci-auditor](https://github.com/nilavanrajamani/vscode-pci-auditor) | VS Code extension — live diagnostics, CodeLens, and one-click Copilot fix suggestions powered by this CLI |
+| [sample-vulnerable-app](https://github.com/nilavanrajamani/sample-vulnerable-app) | Deliberately insecure Flask app containing PCI DSS violations across all four detection layers — used for demo and testing |
