@@ -60,43 +60,47 @@ CI/CD build automatically**.
 
 ```mermaid
 flowchart TD
-    %% ── One-time setup ──────────────────────────────────────────────
-    RULES["📋 pci_rules.json<br/>27 PCI DSS 4.0 rules"]
-    IDXCMD["pci-auditor rules index-build<br/>--backend azure-search"]
-    RULES --> IDXCMD
-
-    subgraph AZURE ["☁️  Azure"]
-        IDXEMBED["Azure OpenAI — text-embedding-3-small<br/>Embed each rule description → vector"]
-        IDXSTORE["Azure AI Search<br/>Store rule vectors in cloud index"]
-        IDXEMBED --> IDXSTORE
-
-        SCANEMBED["Azure OpenAI — text-embedding-3-small<br/>Embed code chunk → query vector"]
-        SEARCHQ["Azure AI Search<br/>BM25 + vector + category filter<br/>Return top-K matching rules"]
-        GPT["Azure OpenAI — gpt-4.1-mini<br/>Analyse code against retrieved rules"]
-        SCANEMBED --> SEARCHQ --> GPT
+    subgraph SETUP ["🔧  Phase 1 — Index Building   (run once before first scan)"]
+        RULES["📋 PCI DSS Rules<br/>27 controls loaded from pci_rules.json"]
+        EMBD1["🔢 Embedding Model<br/><i>Azure OpenAI · text-embedding-3-small</i><br/>Converts each rule description into a numeric vector"]
+        INDEX["🗂️ Rule Index<br/><i>Azure AI Search</i><br/>Stores all 27 rule vectors in a searchable cloud index"]
+        RULES --> EMBD1 --> INDEX
     end
 
-    IDXCMD --> IDXEMBED
-    IDXSTORE -. "index ready (built once)" .-> SEARCHQ
+    subgraph SCAN ["🔍  Phase 2 — PR Scan   (runs on every pull request)"]
+        PR["🔀 Pull Request / Code Change"]
+        CLI["⚙️ pci-auditor CLI<br/>Splits changed files into code chunks"]
+        PR --> CLI
 
-    %% ── Scan flow ───────────────────────────────────────────────────
-    PR["🔀  Pull Request / Code Change"]
-    CLI["pci-auditor CLI"]
-    PR --> CLI
+        REGEX["⚡ Stage 1 · Regex Scanner<br/>Matches hardcoded PANs, keys, weak ciphers<br/>Instant · free · no cloud needed"]
+        AISTAGE["🤖 Stage 2 · AI Analysis"]
+        CLI --> REGEX
+        CLI --> AISTAGE
 
-    CLI --> REGEX["⚡ Stage 1 — Regex Scan<br/>Instant · Free · Offline"]
-    CLI --> AI["🤖 Stage 2 — AI Analysis"]
+        EMBD2["🔢 Embedding Model<br/><i>Azure OpenAI · text-embedding-3-small</i><br/>Converts each code chunk into a query vector"]
+        SEARCHQ["🔍 Rule Retrieval<br/><i>Azure AI Search</i><br/>Finds the most relevant PCI rules for this chunk<br/>using keyword + vector + category filter"]
+        GPT["🧠 Code Analysis<br/><i>Azure OpenAI · gpt-4.1-mini</i><br/>Reads the code chunk and the matched rules<br/>then flags any PCI DSS violations"]
+        AISTAGE --> EMBD2 --> SEARCHQ --> GPT
 
-    REGEX --> PF["Pattern findings"]
-    AI --> SCANEMBED
-    GPT --> AF["AI findings"]
+        PF["Pattern findings"]
+        AF["AI findings"]
+        REGEX --> PF
+        GPT --> AF
 
-    PF --> MERGE["Deduplicate & merge"]
-    AF --> MERGE
+        MERGE["🔗 Deduplicate and merge all findings"]
+        PF --> MERGE
+        AF --> MERGE
 
-    MERGE --> SARIF["SARIF Report"]
-    SARIF -->|"Critical / High"| FAIL["❌  Build fails — PR blocked"]
-    SARIF -->|"Clean"| PASS["✅  Build passes"]
+        SARIF["📄 SARIF Report<br/>Every finding includes rule ID, severity,<br/>file, line, and remediation guidance"]
+        MERGE --> SARIF
+
+        FAIL["❌ Build fails — PR is blocked"]
+        PASS["✅ Build passes — PR is clear"]
+        SARIF -->|"Critical or High violations found"| FAIL
+        SARIF -->|"No blocking violations"| PASS
+    end
+
+    INDEX -. "Index is reused on every scan<br/>without being rebuilt" .-> SEARCHQ
 ```
 
 ---
