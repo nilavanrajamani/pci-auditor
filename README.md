@@ -140,6 +140,65 @@ flowchart LR
 
 ---
 
+## Detection Evolution
+
+How each Azure service added improves what the tool can find. Each tier builds on the one before it.
+
+```mermaid
+flowchart TD
+    CODE["📄 Source code chunk<br/>contains potential PCI violations"]
+
+    subgraph T1 ["⚡  Tier 1 — No Azure · Pattern scan only"]
+        direction TB
+        REGEX["Regex matches code_indicators patterns<br/>against the chunk text — always runs, free, offline"]
+        FOUND1["🔴 Literal violations detected<br/>hardcoded PAN · CVV stored after auth<br/>disabled SSL · plaintext password<br/>deprecated crypto (DES, RC4)"]
+        REGEX --> FOUND1
+    end
+
+    subgraph T2 ["🧠  Tier 2 — + gpt-4.1-mini  (Azure OpenAI · GPT deployment)"]
+        direction TB
+        ALL27["All 27 PCI DSS rules injected into prompt"]
+        GPT["gpt-4.1-mini reasons over code + rules"]
+        FOUND2["🔴 Semantic violations added<br/>missing audit_log() before PAN access<br/>overly broad role grants card-data read<br/>SQL query built from raw user input<br/>unencrypted PAN traced to DB insert"]
+        ALL27 --> GPT --> FOUND2
+    end
+
+    subgraph T3 ["🔢  Tier 3 — + text-embedding-3-small  (Azure OpenAI · Embedding deployment)"]
+        direction TB
+        EMBED["Code chunk → 1,536-float query vector<br/>Cosine similarity vs 27 stored rule vectors"]
+        TOPK["Only top-8 most relevant rules sent to GPT<br/>not all 27"]
+        FOUND3["✅ Same violations · sharper rule citations<br/>Correct rule ID cited more reliably<br/>Fewer irrelevant rules in prompt<br/>Lower token cost per scan"]
+        EMBED --> TOPK --> FOUND3
+    end
+
+    subgraph T4 ["🗂️  Tier 4 — + Azure AI Search  (hybrid cloud index)"]
+        direction TB
+        HYBRID["BM25 keyword score<br/>+ vector cosine score<br/>+ category metadata filter"]
+        TOPK2["Top-8 rules, best-disambiguated<br/>AES chunk → Rule 3.7.1 not 8.6.2<br/>NullHandler chunk → Rule 10.3.3 not 10.2.1"]
+        FOUND4["✅ Best-precision rule attribution<br/>Closely related rule pairs correctly separated<br/>Shared cloud index for all CI/CD runners<br/>No embedding file to distribute across machines"]
+        HYBRID --> TOPK2 --> FOUND4
+    end
+
+    CODE --> T1
+    T1 -->|"add Azure OpenAI GPT deployment"| T2
+    T2 -->|"add Azure OpenAI Embedding deployment"| T3
+    T3 -->|"add Azure AI Search service"| T4
+
+    style REGEX  fill:#fff3cd,stroke:#ffc107,stroke-width:2px
+    style FOUND1 fill:#fff3cd,stroke:#ffc107,stroke-width:2px
+    style ALL27  fill:#e9d7fe,stroke:#6f42c1,stroke-width:2px
+    style GPT    fill:#e9d7fe,stroke:#6f42c1,stroke-width:2px
+    style FOUND2 fill:#e9d7fe,stroke:#6f42c1,stroke-width:2px
+    style EMBED  fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style TOPK   fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style FOUND3 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style HYBRID fill:#d1f2eb,stroke:#198754,stroke-width:2px
+    style TOPK2  fill:#d1f2eb,stroke:#198754,stroke-width:2px
+    style FOUND4 fill:#d1f2eb,stroke:#198754,stroke-width:2px
+```
+
+---
+
 ## Demo
 
 > Scanning a file with a hardcoded PAN, CVV, and plaintext password:
