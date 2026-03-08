@@ -59,8 +59,9 @@ CI/CD build automatically**.
 ## End-to-End Flow
 
 ```mermaid
-flowchart TD
+flowchart LR
     subgraph SETUP ["🔧  Phase 1 — Index Building   (run once before first scan)"]
+        direction TB
         RULES["📋 PCI DSS Rules<br/>27 controls loaded from pci_rules.json"]
         EMBD1["🔢 Embedding Model<br/><i>Azure OpenAI · text-embedding-3-small</i><br/>Converts each rule description into a numeric vector"]
         INDEX["🗂️ Rule Index<br/><i>Azure AI Search</i><br/>Stores all 27 rule vectors in a searchable cloud index"]
@@ -68,6 +69,7 @@ flowchart TD
     end
 
     subgraph SCAN ["🔍  Phase 2 — PR Scan   (runs on every pull request)"]
+        direction TB
         PR["🔀 Pull Request / Code Change"]
         CLI["⚙️ pci-auditor CLI<br/>Splits changed files into code chunks"]
         PR --> CLI
@@ -91,7 +93,7 @@ flowchart TD
         PF --> MERGE
         AF --> MERGE
 
-        SARIF["📄 SARIF Report<br/>Every finding includes rule ID, severity,<br/>file, line, and remediation guidance"]
+        SARIF["📄 SARIF Report<br/>Every finding includes rule ID, severity, file, line, and remediation guidance"]
         MERGE --> SARIF
 
         FAIL["❌ Build fails — PR is blocked"]
@@ -100,7 +102,13 @@ flowchart TD
         SARIF -->|"No blocking violations"| PASS
     end
 
-    INDEX -. "Index is reused on every scan<br/>without being rebuilt" .-> SEARCHQ
+    INDEX -. "Index reused on every scan" .-> SEARCHQ
+
+    style EMBD1 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style EMBD2 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style GPT  fill:#e9d7fe,stroke:#6f42c1,stroke-width:2px
+    style INDEX   fill:#d1f2eb,stroke:#198754,stroke-width:2px
+    style SEARCHQ fill:#d1f2eb,stroke:#198754,stroke-width:2px
 ```
 
 ---
