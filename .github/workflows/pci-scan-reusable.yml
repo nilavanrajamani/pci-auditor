@@ -44,10 +44,15 @@ on:
         default: 'critical,high'
         type: string
       no_ai:
-        description: 'Disable AI analysis'
+        description: 'Disable AI analysis (overrides detection_mode to pattern)'
         required: false
         default: false
         type: boolean
+      detection_mode:
+        description: 'Detection mode: pattern, ai, embeddings, azure-search'
+        required: false
+        default: 'azure-search'
+        type: string
       base_branch:
         description: 'Base branch for PR diff (e.g. main). Required for pr scan_type.'
         required: false
@@ -63,6 +68,10 @@ on:
       AZURE_OPENAI_API_VERSION:
         required: true
       AZURE_OPENAI_EMBEDDING_DEPLOYMENT:
+        required: false
+      AZURE_OPENAI_EMBEDDING_ENDPOINT:
+        required: false
+      AZURE_OPENAI_EMBEDDING_API_KEY:
         required: false
       AZURE_SEARCH_ENDPOINT:
         required: false
@@ -102,16 +111,20 @@ jobs:
       - name: Cache rule embeddings
         uses: actions/cache@v4
         with:
-          path: ~/.pci-auditor/rule_embeddings.json
+          path: |
+            ~/.pci-auditor/azure_search_rules_meta.json
+            ~/.pci-auditor/azure_search_rules_hash.txt
           key: pci-embeddings-${{ hashFiles('**/pci_rules.json') }}
 
       - name: Build rule embedding index (RAG)
-        run: pci-auditor rules index-build || echo "Index build failed — will use all rules"
+        run: pci-auditor rules index-build --backend azure-search || echo "Index build failed — will use all rules"
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
           AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}
+          AZURE_OPENAI_EMBEDDING_ENDPOINT: ${{ secrets.AZURE_OPENAI_EMBEDDING_ENDPOINT }}
+          AZURE_OPENAI_EMBEDDING_API_KEY: ${{ secrets.AZURE_OPENAI_EMBEDDING_API_KEY }}
           AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
           AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
           AZURE_SEARCH_INDEX_NAME: ${{ secrets.AZURE_SEARCH_INDEX_NAME }}
@@ -124,6 +137,7 @@ jobs:
             --repo-path "$GITHUB_WORKSPACE" \
             --base-branch "origin/${{ inputs.base_branch }}" \
             --head HEAD \
+            --detection-mode ${{ inputs.no_ai == true && 'pattern' || inputs.detection_mode }} \
             --output-format sarif \
             --output-file pci-results/pci-pr-results.sarif \
             --fail-on ${{ inputs.fail_on }}
@@ -133,6 +147,8 @@ jobs:
           AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
           AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
           AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}
+          AZURE_OPENAI_EMBEDDING_ENDPOINT: ${{ secrets.AZURE_OPENAI_EMBEDDING_ENDPOINT }}
+          AZURE_OPENAI_EMBEDDING_API_KEY: ${{ secrets.AZURE_OPENAI_EMBEDDING_API_KEY }}
           AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
           AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
           AZURE_SEARCH_INDEX_NAME: ${{ secrets.AZURE_SEARCH_INDEX_NAME }}
@@ -177,16 +193,20 @@ jobs:
       - name: Cache rule embeddings
         uses: actions/cache@v4
         with:
-          path: ~/.pci-auditor/rule_embeddings.json
+          path: |
+            ~/.pci-auditor/azure_search_rules_meta.json
+            ~/.pci-auditor/azure_search_rules_hash.txt
           key: pci-embeddings-${{ hashFiles('**/pci_rules.json') }}
 
       - name: Build rule embedding index (RAG)
-        run: pci-auditor rules index-build || echo "Index build failed — will use all rules"
+        run: pci-auditor rules index-build --backend azure-search || echo "Index build failed — will use all rules"
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
           AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}
+          AZURE_OPENAI_EMBEDDING_ENDPOINT: ${{ secrets.AZURE_OPENAI_EMBEDDING_ENDPOINT }}
+          AZURE_OPENAI_EMBEDDING_API_KEY: ${{ secrets.AZURE_OPENAI_EMBEDDING_API_KEY }}
           AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
           AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
           AZURE_SEARCH_INDEX_NAME: ${{ secrets.AZURE_SEARCH_INDEX_NAME }}
@@ -197,15 +217,18 @@ jobs:
           mkdir -p pci-results
           pci-auditor scan codebase \
             --path "${{ inputs.path }}" \
+            --detection-mode ${{ inputs.no_ai == true && 'pattern' || inputs.detection_mode }} \
             --output-format ${{ inputs.output_format }} \
             --output-file pci-results/${{ inputs.output_file }} \
-            --fail-on ${{ inputs.fail_on }} ${{ inputs.no_ai == true && '--no-ai' || '' }}
+            --fail-on ${{ inputs.fail_on }}
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
           AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
           AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}
+          AZURE_OPENAI_EMBEDDING_ENDPOINT: ${{ secrets.AZURE_OPENAI_EMBEDDING_ENDPOINT }}
+          AZURE_OPENAI_EMBEDDING_API_KEY: ${{ secrets.AZURE_OPENAI_EMBEDDING_API_KEY }}
           AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
           AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
           AZURE_SEARCH_INDEX_NAME: ${{ secrets.AZURE_SEARCH_INDEX_NAME }}
