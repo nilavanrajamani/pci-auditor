@@ -148,41 +148,47 @@ How each Azure service added improves what the tool can find. Each tier builds o
 flowchart TD
     CODE["📄 Source code chunk<br/>contains potential PCI violations"]
 
-    subgraph T1 ["⚡  Tier 1 — No Azure · Pattern scan only"]
+    subgraph T1 ["⚡  Tier 1 — No Azure"]
         direction TB
+        LBL1["Pattern scan only · free · offline · no cloud required"]:::sublabel
         REGEX["Regex matches code_indicators patterns<br/>against the chunk text — always runs, free, offline"]
         FOUND1["🔴 Literal violations detected<br/>hardcoded PAN · CVV stored after auth<br/>disabled SSL · plaintext password<br/>deprecated crypto (DES, RC4)"]
-        REGEX --> FOUND1
+        LBL1 --> REGEX --> FOUND1
     end
 
-    subgraph T2 ["🧠  Tier 2 — + gpt-4.1-mini  (Azure OpenAI · GPT deployment)"]
+    subgraph T2 ["🧠  Tier 2 — + gpt-4.1-mini"]
         direction TB
+        LBL2["Azure OpenAI · Chat Completion deployment"]:::sublabel
         ALL27["All 27 PCI DSS rules injected into prompt"]
         GPT["gpt-4.1-mini reasons over code + rules"]
         FOUND2["🔴 Semantic violations added<br/>missing audit_log() before PAN access<br/>overly broad role grants card-data read<br/>SQL query built from raw user input<br/>unencrypted PAN traced to DB insert"]
-        ALL27 --> GPT --> FOUND2
+        LBL2 --> ALL27 --> GPT --> FOUND2
     end
 
-    subgraph T3 ["🔢  Tier 3 — + text-embedding-3-small  (Azure OpenAI · Embedding deployment)"]
+    subgraph T3 ["🔢  Tier 3 — + text-embedding-3-small"]
         direction TB
+        LBL3["Azure OpenAI · Embedding deployment"]:::sublabel
         EMBED["Code chunk → 1,536-float query vector<br/>Cosine similarity vs 27 stored rule vectors"]
         TOPK["Only top-8 most relevant rules sent to GPT<br/>not all 27"]
         FOUND3["✅ Same violations · sharper rule citations<br/>Correct rule ID cited more reliably<br/>Fewer irrelevant rules in prompt<br/>Lower token cost per scan"]
-        EMBED --> TOPK --> FOUND3
+        LBL3 --> EMBED --> TOPK --> FOUND3
     end
 
-    subgraph T4 ["🗂️  Tier 4 — + Azure AI Search  (hybrid cloud index)"]
+    subgraph T4 ["🗂️  Tier 4 — + Azure AI Search"]
         direction TB
+        LBL4["Hybrid BM25 + vector + category-filter cloud index"]:::sublabel
         HYBRID["BM25 keyword score<br/>+ vector cosine score<br/>+ category metadata filter"]
         TOPK2["Top-8 rules, best-disambiguated<br/>AES chunk → Rule 3.7.1 not 8.6.2<br/>NullHandler chunk → Rule 10.3.3 not 10.2.1"]
         FOUND4["✅ Best-precision rule attribution<br/>Closely related rule pairs correctly separated<br/>Shared cloud index for all CI/CD runners<br/>No embedding file to distribute across machines"]
-        HYBRID --> TOPK2 --> FOUND4
+        LBL4 --> HYBRID --> TOPK2 --> FOUND4
     end
 
     CODE --> T1
     T1 -->|"add Azure OpenAI GPT deployment"| T2
     T2 -->|"add Azure OpenAI Embedding deployment"| T3
     T3 -->|"add Azure AI Search service"| T4
+
+    classDef sublabel fill:#f8f9fa,stroke:#dee2e6,color:#6c757d,font-style:italic
 
     style REGEX  fill:#fff3cd,stroke:#ffc107,stroke-width:2px
     style FOUND1 fill:#fff3cd,stroke:#ffc107,stroke-width:2px
