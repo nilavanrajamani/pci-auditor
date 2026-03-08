@@ -71,9 +71,9 @@ flowchart TD
     REGEX --> PF["Pattern findings"]
 
     subgraph AZURE ["☁️  Azure"]
-        EMBED["Azure OpenAI\nEmbed code chunk\ntext-embedding-3-small"]
-        SEARCH["Azure AI Search\nTop-K PCI DSS rules\nBM25 + vector + category filter"]
-        GPT["Azure OpenAI\nAnalyse code with rules\ngpt-4.1-mini"]
+        EMBED["Azure OpenAI — text-embedding-3-small\nConvert code chunk to vector"]
+        SEARCH["Azure AI Search\nRetrieve top-K matching PCI DSS rules"]
+        GPT["Azure OpenAI — gpt-4.1-mini\nAnalyse code against retrieved rules"]
         EMBED --> SEARCH --> GPT
     end
 
