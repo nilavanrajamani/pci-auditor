@@ -60,31 +60,41 @@ CI/CD build automatically**.
 
 ```mermaid
 flowchart TD
+    %% ── One-time setup ──────────────────────────────────────────────
+    RULES["📋 pci_rules.json\n27 PCI DSS 4.0 rules"]
+    IDXCMD["pci-auditor rules index-build\n--backend azure-search"]
+    RULES --> IDXCMD
+
+    subgraph AZURE ["☁️  Azure"]
+        IDXEMBED["Azure OpenAI — text-embedding-3-small\nEmbed each rule description → vector"]
+        IDXSTORE["Azure AI Search\nStore rule vectors in cloud index"]
+        IDXEMBED --> IDXSTORE
+
+        SCANEMBED["Azure OpenAI — text-embedding-3-small\nEmbed code chunk → query vector"]
+        SEARCHQ["Azure AI Search\nBM25 + vector + category filter\nReturn top-K matching rules"]
+        GPT["Azure OpenAI — gpt-4.1-mini\nAnalyse code against retrieved rules"]
+        SCANEMBED --> SEARCHQ --> GPT
+    end
+
+    IDXCMD --> IDXEMBED
+    IDXSTORE -. "index ready\n(built once)" .-> SEARCHQ
+
+    %% ── Scan flow ───────────────────────────────────────────────────
     PR["🔀  Pull Request / Code Change"]
     CLI["pci-auditor CLI"]
-
     PR --> CLI
 
     CLI --> REGEX["⚡ Stage 1 — Regex Scan\nInstant · Free · Offline"]
     CLI --> AI["🤖 Stage 2 — AI Analysis"]
 
     REGEX --> PF["Pattern findings"]
-
-    subgraph AZURE ["☁️  Azure"]
-        EMBED["Azure OpenAI — text-embedding-3-small\nConvert code chunk to vector"]
-        SEARCH["Azure AI Search\nRetrieve top-K matching PCI DSS rules"]
-        GPT["Azure OpenAI — gpt-4.1-mini\nAnalyse code against retrieved rules"]
-        EMBED --> SEARCH --> GPT
-    end
-
-    AI --> EMBED
+    AI --> SCANEMBED
     GPT --> AF["AI findings"]
 
     PF --> MERGE["Deduplicate & merge"]
     AF --> MERGE
 
     MERGE --> SARIF["SARIF Report"]
-
     SARIF -->|"Critical / High"| FAIL["❌  Build fails — PR blocked"]
     SARIF -->|"Clean"| PASS["✅  Build passes"]
 ```
