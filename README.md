@@ -165,7 +165,7 @@ flowchart TD
         LBL2 --> ALL27 --> GPT --> FOUND2
     end
 
-    subgraph T3 ["🔢  Tier 3 — + text-embedding-3-small"]
+    subgraph T3 ["🔢  Tier 3 — Embeddings"]
         direction TB
         LBL3["Azure OpenAI · Embedding deployment"]:::sublabel
         EMBED["Code chunk → 1,536-float query vector<br/>Cosine similarity vs 27 stored rule vectors"]
@@ -174,7 +174,7 @@ flowchart TD
         LBL3 --> EMBED --> TOPK --> FOUND3
     end
 
-    subgraph T4 ["🗂️  Tier 4 — + Azure AI Search"]
+    subgraph T4 ["🗂️  Tier 4 — AI Search"]
         direction TB
         LBL4["Hybrid BM25 + vector + category-filter cloud index"]:::sublabel
         HYBRID["BM25 keyword score<br/>+ vector cosine score<br/>+ category metadata filter"]
