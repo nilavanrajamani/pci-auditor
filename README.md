@@ -102,11 +102,11 @@ flowchart LR
         SARIF -->|"No blocking violations"| PASS
     end
 
-    INDEX -. "Index reused on every scan" .-> SEARCHQ
+    SETUP -.->|"Index reused on every scan<br/>without rebuilding"| SCAN
 
-    style EMBD1 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style EMBD2 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style GPT  fill:#e9d7fe,stroke:#6f42c1,stroke-width:2px
+    style EMBD1   fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style EMBD2   fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style GPT     fill:#e9d7fe,stroke:#6f42c1,stroke-width:2px
     style INDEX   fill:#d1f2eb,stroke:#198754,stroke-width:2px
     style SEARCHQ fill:#d1f2eb,stroke:#198754,stroke-width:2px
 ```
