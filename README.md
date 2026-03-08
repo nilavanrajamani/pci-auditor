@@ -56,32 +56,56 @@ CI/CD build automatically**.
 
 ---
 
+## Azure Resources
+
+Three Azure services power the tool. Start here before walking through the flow.
+
+```mermaid
+flowchart TB
+    subgraph AOI ["☁️  Azure OpenAI  —  single endpoint and API key"]
+        direction LR
+        GPT["🧠 gpt-4.1-mini<br/>Reads code chunks<br/>Returns PCI violations as JSON<br/>― used at every scan"]
+        EMB["🔢 text-embedding-3-small<br/>Converts text into a 1536-number vector<br/>― used at index build and scan"]
+    end
+
+    SRCH["🗂️ Azure AI Search<br/>Stores the 27 rule vectors in a cloud index<br/>Returns the rules most relevant to each code chunk<br/>― used at index build and scan"]
+
+    EMB -->|"pushes rule vectors"| SRCH
+    SRCH -->|"returns top-K rules"| GPT
+
+    style GPT  fill:#e9d7fe,stroke:#6f42c1,stroke-width:2px
+    style EMB  fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style SRCH fill:#d1f2eb,stroke:#198754,stroke-width:2px
+```
+
+---
+
 ## End-to-End Flow
 
 ```mermaid
 flowchart LR
-    subgraph SETUP ["🔧  Phase 1 — Index Building   (run once before first scan)"]
+    subgraph SETUP ["🔧  Phase 1 — Index Building   (run once)"]
         direction TB
-        RULES["📋 PCI DSS Rules<br/>27 controls loaded from pci_rules.json"]
-        EMBD1["🔢 Embedding Model<br/><i>Azure OpenAI · text-embedding-3-small</i><br/>Converts each rule description into a numeric vector"]
-        INDEX["🗂️ Rule Index<br/><i>Azure AI Search</i><br/>Stores all 27 rule vectors in a searchable cloud index"]
+        RULES["📋 PCI DSS Rules<br/>27 controls from pci_rules.json"]
+        EMBD1["🔢 text-embedding-3-small<br/>Each rule description → vector"]
+        INDEX["🗂️ Azure AI Search<br/>Rule vectors stored in cloud index"]
         RULES --> EMBD1 --> INDEX
     end
 
-    subgraph SCAN ["🔍  Phase 2 — PR Scan   (runs on every pull request)"]
+    subgraph SCAN ["🔍  Phase 2 — PR Scan   (every pull request)"]
         direction TB
         PR["🔀 Pull Request / Code Change"]
-        CLI["⚙️ pci-auditor CLI<br/>Splits changed files into code chunks"]
+        CLI["⚙️ pci-auditor CLI<br/>Splits files into code chunks"]
         PR --> CLI
 
-        REGEX["⚡ Stage 1 · Regex Scanner<br/>Matches hardcoded PANs, keys, weak ciphers<br/>Instant · free · no cloud needed"]
+        REGEX["⚡ Stage 1 · Regex Scanner<br/>Catches literal violations instantly<br/>No cloud · free · offline"]
         AISTAGE["🤖 Stage 2 · AI Analysis"]
         CLI --> REGEX
         CLI --> AISTAGE
 
-        EMBD2["🔢 Embedding Model<br/><i>Azure OpenAI · text-embedding-3-small</i><br/>Converts each code chunk into a query vector"]
-        SEARCHQ["🔍 Rule Retrieval<br/><i>Azure AI Search</i><br/>Finds the most relevant PCI rules for this chunk<br/>using keyword + vector + category filter"]
-        GPT["🧠 Code Analysis<br/><i>Azure OpenAI · gpt-4.1-mini</i><br/>Reads the code chunk and the matched rules<br/>then flags any PCI DSS violations"]
+        EMBD2["🔢 text-embedding-3-small<br/>Code chunk → query vector"]
+        SEARCHQ["🔍 Azure AI Search<br/>Returns top-K matching rules"]
+        GPT["🧠 gpt-4.1-mini<br/>Flags PCI DSS violations in the code"]
         AISTAGE --> EMBD2 --> SEARCHQ --> GPT
 
         PF["Pattern findings"]
@@ -89,20 +113,20 @@ flowchart LR
         REGEX --> PF
         GPT --> AF
 
-        MERGE["🔗 Deduplicate and merge all findings"]
+        MERGE["🔗 Deduplicate and merge findings"]
         PF --> MERGE
         AF --> MERGE
 
-        SARIF["📄 SARIF Report<br/>Every finding includes rule ID, severity, file, line, and remediation guidance"]
+        SARIF["📄 SARIF Report<br/>Rule ID · severity · file · line · fix"]
         MERGE --> SARIF
 
-        FAIL["❌ Build fails — PR is blocked"]
-        PASS["✅ Build passes — PR is clear"]
-        SARIF -->|"Critical or High violations found"| FAIL
+        FAIL["❌ Build fails — PR blocked"]
+        PASS["✅ Build passes — PR clear"]
+        SARIF -->|"Critical or High found"| FAIL
         SARIF -->|"No blocking violations"| PASS
     end
 
-    SETUP -.->|"Index reused on every scan<br/>without rebuilding"| SCAN
+    SETUP -.->|"Index reused on every scan"| SCAN
 
     style EMBD1   fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
     style EMBD2   fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
@@ -575,35 +599,7 @@ The tool can use up to three Azure services depending on which mode you run. Her
 
 ### How the resources relate to each other
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Azure OpenAI Resource                    │
-│           (one endpoint URL, one API key)                   │
-│                                                             │
-│  ┌──────────────────────┐   ┌───────────────────────────┐  │
-│  │  Deployment 1        │   │  Deployment 2             │  │
-│  │  ─────────────────── │   │  ──────────────────────── │  │
-│  │  gpt-4.1-mini        │   │  text-embedding-3-small   │  │
-│  │                      │   │                           │  │
-│  │  Reads source code.  │   │  Converts text into a     │  │
-│  │  Returns PCI DSS     │   │  list of 1,536 numbers    │  │
-│  │  violations as JSON. │   │  (a "vector").            │  │
-│  │                      │   │                           │  │
-│  │  Used at: scan time  │   │  Used at: index-build     │  │
-│  │                      │   │           + scan time     │  │
-│  └──────────────────────┘   └───────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                   Azure AI Search  (optional)               │
-│                                                             │
-│  Stores the 27 rule vectors and answers the question:       │
-│  "Which rules are most similar to this code chunk?"         │
-│                                                             │
-│  Replaces the local rule_embeddings.json file for           │
-│  CI/CD pipelines where multiple machines share one index.   │
-└─────────────────────────────────────────────────────────────┘
-```
+See the [Azure Resources](#azure-resources) diagram at the top of this document for a visual overview of how gpt-4.1-mini, text-embedding-3-small, and Azure AI Search connect.
 
 ---
 
