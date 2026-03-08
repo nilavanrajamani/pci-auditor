@@ -56,6 +56,41 @@ CI/CD build automatically**.
 
 ---
 
+## End-to-End Flow
+
+```mermaid
+flowchart TD
+    PR["🔀  Pull Request / Code Change"]
+    CLI["pci-auditor CLI"]
+
+    PR --> CLI
+
+    CLI --> REGEX["⚡ Stage 1 — Regex Scan\nInstant · Free · Offline"]
+    CLI --> AI["🤖 Stage 2 — AI Analysis"]
+
+    REGEX --> PF["Pattern findings"]
+
+    subgraph AZURE ["☁️  Azure"]
+        EMBED["Azure OpenAI\nEmbed code chunk\ntext-embedding-3-small"]
+        SEARCH["Azure AI Search\nTop-K PCI DSS rules\nBM25 + vector + category filter"]
+        GPT["Azure OpenAI\nAnalyse code with rules\ngpt-4.1-mini"]
+        EMBED --> SEARCH --> GPT
+    end
+
+    AI --> EMBED
+    GPT --> AF["AI findings"]
+
+    PF --> MERGE["Deduplicate & merge"]
+    AF --> MERGE
+
+    MERGE --> SARIF["SARIF Report"]
+
+    SARIF -->|"Critical / High"| FAIL["❌  Build fails — PR blocked"]
+    SARIF -->|"Clean"| PASS["✅  Build passes"]
+```
+
+---
+
 ## Demo
 
 > Scanning a file with a hardcoded PAN, CVV, and plaintext password:
