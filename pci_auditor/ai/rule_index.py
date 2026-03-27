@@ -219,7 +219,24 @@ class AzureSearchRuleIndex:
         if not _AZURE_HASH_PATH.exists() or not _AZURE_META_PATH.exists():
             return False
         stored = _AZURE_HASH_PATH.read_text(encoding="utf-8").strip()
-        return stored == self._compute_rules_hash(rules)
+        if stored != self._compute_rules_hash(rules):
+            return False
+        # Hash matches locally — also verify the index actually exists in Azure.
+        try:
+            import httpx
+            with httpx.Client(timeout=10) as client:
+                resp = client.get(self._index_url(), headers=self._headers())
+                if resp.status_code == 404:
+                    logger.debug(
+                        "Azure AI Search index '%s' not found (404) — will rebuild.",
+                        self._index_name,
+                    )
+                    return False
+                resp.raise_for_status()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not verify Azure AI Search index existence: %s", exc)
+            return False
+        return True
 
     def build(self, rules: List[PciRule], embedder: EmbeddingClient, force: bool = False) -> None:
         """Create or update the Azure AI Search index and upload all rules.
@@ -243,6 +260,15 @@ class AzureSearchRuleIndex:
         # Detect dimension from first embedding
         first_vec = embedder.embed(rules[0].requirement)
         self._dimension = len(first_vec)
+
+        # When forcing, delete the existing index first so the PUT doesn't
+        # fail with 400 due to immutable field conflicts.
+        if force:
+            with httpx.Client(timeout=30) as client:
+                del_resp = client.delete(self._index_url(), headers=self._headers())
+                if del_resp.status_code not in (200, 204, 404):
+                    del_resp.raise_for_status()
+                logger.info("Deleted existing Azure AI Search index '%s'.", self._index_name)
 
         # Build/recreate the index schema
         schema = {
